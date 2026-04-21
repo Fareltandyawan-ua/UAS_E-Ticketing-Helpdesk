@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'package:get/get.dart';
-import 'package:realtime_client/realtime_client.dart'
-    show PostgresChangeEvent;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/network/supabase_service.dart';
 import 'notification_model.dart';
 
@@ -11,63 +11,89 @@ class NotificationController extends GetxController {
   final RxBool isLoading = false.obs;
   final RxInt unreadCount = 0.obs;
 
-  // Stream subscription untuk Supabase Realtime
-  dynamic _realtimeChannel;
+  // Realtime
+  RealtimeChannel? _channel;
+  // Polling timer — backup jika Realtime tidak terpasang
+  Timer? _pollingTimer;
 
   @override
   void onInit() {
     super.onInit();
     fetchNotifications();
     _subscribeRealtime();
+    _startPolling();
   }
 
   @override
   void onClose() {
-    // Unsubscribe realtime channel saat controller di-dispose
-    if (_realtimeChannel != null) {
-      try {
-        _db.removeChannel(_realtimeChannel);
-      } catch (_) {}
-    }
+    _stopPolling();
+    _unsubscribeRealtime();
     super.onClose();
   }
 
-  /// Subscribe ke Supabase Realtime agar notifikasi update otomatis
-  void _subscribeRealtime() {
-    try {
-      final userId = _db.auth.currentUser?.id;
-      if (userId == null) return;
+  // ── Polling setiap 20 detik ──────────────────────────────────────────────
+  void _startPolling() {
+    _pollingTimer = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => fetchNotifications(),
+    );
+  }
 
-      _realtimeChannel = _db
-          .channel('public:notifications:user_id=eq.$userId')
+  void _stopPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = null;
+  }
+
+  // ── Realtime (bonus jika diaktifkan di Supabase) ─────────────────────────
+  void _unsubscribeRealtime() {
+    if (_channel != null) {
+      try {
+        _db.removeChannel(_channel!);
+      } catch (_) {}
+      _channel = null;
+    }
+  }
+
+  void _subscribeRealtime() {
+    final userId = _db.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      _channel = _db
+          .channel('notifications-$userId')
           .onPostgresChanges(
             event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'notifications',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'user_id',
+              value: userId,
+            ),
             callback: (payload) {
-              // Tambahkan notifikasi baru ke list tanpa re-fetch semua
               try {
                 final newNotif =
                     NotificationModel.fromJson(payload.newRecord);
-                // Hanya tambahkan jika milik user ini
-                if (payload.newRecord['user_id'] == userId) {
-                  notifications.insert(0, newNotif);
-                  unreadCount.value =
-                      notifications.where((n) => !n.isRead).length;
-                }
+                notifications.insert(0, newNotif);
+                unreadCount.value =
+                    notifications.where((n) => !n.isRead).length;
               } catch (_) {
-                fetchNotifications(); // fallback jika parsing gagal
+                fetchNotifications();
               }
             },
           )
           .subscribe();
     } catch (_) {
-      // Realtime tidak tersedia — fallback ke manual fetch
+      // Realtime gagal connect — polling sudah menangani
     }
   }
 
+  // ── Fetch ────────────────────────────────────────────────────────────────
   Future<void> fetchNotifications() async {
-    isLoading.value = true;
+    // Jangan tampilkan loading spinner saat background polling
+    final showLoading = notifications.isEmpty;
+    if (showLoading) isLoading.value = true;
+
     try {
       final userId = _db.auth.currentUser?.id;
       if (userId == null) return;
@@ -76,15 +102,16 @@ class NotificationController extends GetxController {
           .from('notifications')
           .select()
           .eq('user_id', userId)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .limit(50);
+
       notifications.assignAll(
         (data as List).map((e) => NotificationModel.fromJson(e)).toList(),
       );
       unreadCount.value = notifications.where((n) => !n.isRead).length;
-    } catch (_) {
-      // Gagal fetch notifikasi tidak perlu crash app
-    }
-    isLoading.value = false;
+    } catch (_) {}
+
+    if (showLoading) isLoading.value = false;
   }
 
   Future<void> markRead(String id) async {
@@ -110,7 +137,6 @@ class NotificationController extends GetxController {
     try {
       final userId = _db.auth.currentUser?.id;
       if (userId == null) return;
-
       await _db
           .from('notifications')
           .update({'is_read': true})

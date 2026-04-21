@@ -15,4 +15,5 @@ class AppRoutes {
   static const String history = '/history';
   static const String profile = '/profile';
   static const String editProfile = '/profile/edit';
+  static const String admin = '/admin';
 }

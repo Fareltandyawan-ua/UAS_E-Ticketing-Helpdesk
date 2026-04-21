@@ -46,7 +46,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
         if (_ctrl.historyList.isEmpty) {
           return const EmptyState(
             title: 'Belum ada riwayat',
-            subtitle: 'Tiket yang sudah selesai atau ditutup akan tampil di sini',
+            subtitle:
+                'Tiket yang sudah selesai atau ditutup akan tampil di sini',
             icon: Icons.history_rounded,
           );
         }
@@ -104,8 +105,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
         final ticket = _ctrl.selectedTicket.value;
         if (ticket == null) {
           return const EmptyState(
-              title: 'Tiket tidak ditemukan',
-              icon: Icons.error_outline);
+            title: 'Tiket tidak ditemukan',
+            icon: Icons.error_outline,
+          );
         }
 
         return SingleChildScrollView(
@@ -127,16 +129,21 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(ticket.title,
-                              style: AppTextStyles.titleLarge),
+                          child: Text(
+                            ticket.title,
+                            style: AppTextStyles.titleLarge,
+                          ),
                         ),
                         StatusBadge(status: ticket.status),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    Text('#${ticket.id} • ${ticket.category}',
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.grey400)),
+                    Text(
+                      '#${ticket.id} • ${ticket.category}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.grey400,
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -179,7 +186,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       color: _statusColor(item.status).withOpacity(0.15),
                       shape: BoxShape.circle,
                       border: Border.all(
-                          color: _statusColor(item.status), width: 2),
+                        color: _statusColor(item.status),
+                        width: 2,
+                      ),
                     ),
                     child: Icon(
                       _statusIcon(item.status),
@@ -209,25 +218,34 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       const SizedBox(height: 6),
                       StatusBadge(status: item.status),
                       const SizedBox(height: 6),
-                      Text(item.description,
-                          style: AppTextStyles.bodySmall),
+                      Text(item.description, style: AppTextStyles.bodySmall),
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          const Icon(Icons.person_outline,
-                              size: 13, color: AppColors.grey400),
+                          const Icon(
+                            Icons.person_outline,
+                            size: 13,
+                            color: AppColors.grey400,
+                          ),
                           const SizedBox(width: 4),
-                          Text(item.changedBy?.name ?? 'System',
-                              style: AppTextStyles.labelSmall
-                                  .copyWith(color: AppColors.grey400)),
+                          Text(
+                            item.changedBy?.name ?? 'System',
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.grey400,
+                            ),
+                          ),
                           const SizedBox(width: 10),
-                          const Icon(Icons.access_time_outlined,
-                              size: 13, color: AppColors.grey400),
+                          const Icon(
+                            Icons.access_time_outlined,
+                            size: 13,
+                            color: AppColors.grey400,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             DateFormatter.formatWithTime(item.createdAt),
-                            style: AppTextStyles.labelSmall
-                                .copyWith(color: AppColors.grey400),
+                            style: AppTextStyles.labelSmall.copyWith(
+                              color: AppColors.grey400,
+                            ),
                           ),
                         ],
                       ),
@@ -244,21 +262,31 @@ class _TrackingScreenState extends State<TrackingScreen> {
 
   Color _statusColor(String status) {
     switch (status) {
-      case 'open': return AppColors.statusOpen;
-      case 'in_progress': return AppColors.statusInProgress;
-      case 'resolved': return AppColors.statusResolved;
-      case 'closed': return AppColors.statusClosed;
-      default: return AppColors.grey400;
+      case 'open':
+        return AppColors.statusOpen;
+      case 'in_progress':
+        return AppColors.statusInProgress;
+      case 'resolved':
+        return AppColors.statusResolved;
+      case 'closed':
+        return AppColors.statusClosed;
+      default:
+        return AppColors.grey400;
     }
   }
 
   IconData _statusIcon(String status) {
     switch (status) {
-      case 'open': return Icons.folder_open_outlined;
-      case 'in_progress': return Icons.sync_rounded;
-      case 'resolved': return Icons.check_circle_outline;
-      case 'closed': return Icons.archive_outlined;
-      default: return Icons.circle_outlined;
+      case 'open':
+        return Icons.folder_open_outlined;
+      case 'in_progress':
+        return Icons.sync_rounded;
+      case 'resolved':
+        return Icons.check_circle_outline;
+      case 'closed':
+        return Icons.archive_outlined;
+      default:
+        return Icons.circle_outlined;
     }
   }
 }

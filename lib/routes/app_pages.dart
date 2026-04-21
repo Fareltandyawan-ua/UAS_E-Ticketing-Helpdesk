@@ -4,9 +4,7 @@ import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
 import '../features/dashboard/presentation/dashboard_controller.dart';
-import '../features/dashboard/presentation/dashboard_screen.dart';
 import '../features/ticket/presentation/ticket_controller.dart';
-import '../features/ticket/presentation/ticket_list_screen.dart';
 import '../features/ticket/presentation/ticket_detail_screen.dart';
 import '../features/ticket/presentation/create_ticket_screen.dart';
 import '../features/notification/notification_controller.dart';
@@ -14,6 +12,8 @@ import '../features/notification/notification_screen.dart';
 import '../features/tracking/tracking_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/edit_profile_screen.dart';
+import '../features/admin/presentation/admin_controller.dart';
+import '../features/admin/presentation/admin_screen.dart';
 import 'app_routes.dart';
 import '../main_screen.dart';
 import '../splash_screen.dart';
@@ -39,6 +39,11 @@ class AppPages {
         Get.lazyPut<DashboardController>(() => DashboardController());
         Get.lazyPut<TicketController>(() => TicketController());
         Get.lazyPut<NotificationController>(() => NotificationController());
+        // AdminController hanya diinisialisasi jika user adalah admin
+        final authCtrl = Get.find<AuthController>();
+        if (authCtrl.isAdmin) {
+          Get.lazyPut<AdminController>(() => AdminController());
+        }
       }),
     ),
     GetPage(
@@ -60,5 +65,12 @@ class AppPages {
     GetPage(name: AppRoutes.history, page: () => const HistoryScreen()),
     GetPage(name: AppRoutes.profile, page: () => const ProfileScreen()),
     GetPage(name: AppRoutes.editProfile, page: () => EditProfileScreen()),
+    GetPage(
+      name: AppRoutes.admin,
+      page: () => const AdminScreen(),
+      binding: BindingsBuilder(() {
+        Get.lazyPut<AdminController>(() => AdminController());
+      }),
+    ),
   ];
 }

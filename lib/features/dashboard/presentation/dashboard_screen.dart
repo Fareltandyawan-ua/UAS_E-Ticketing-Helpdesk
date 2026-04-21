@@ -8,7 +8,17 @@ import '../../../routes/app_routes.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../ticket/presentation/ticket_controller.dart';
 import '../../ticket/presentation/ticket_list_screen.dart';
+import '../../../main_screen.dart';
 import 'dashboard_controller.dart';
+
+/// Helper — switch ke tab Tiket (index 1) via MainTabController
+void _goToTickets() {
+  if (Get.isRegistered<MainTabController>()) {
+    Get.find<MainTabController>().goToTickets();
+  } else {
+    Get.toNamed(AppRoutes.main);
+  }
+}
 
 class DashboardScreen extends StatelessWidget {
   const DashboardScreen({super.key});
@@ -106,7 +116,7 @@ class DashboardScreen extends StatelessWidget {
                                 color: AppColors.statusOpen,
                                 bgColor: AppColors.statusOpenBg,
                                 icon: Icons.folder_open_outlined,
-                                onTap: () => Get.toNamed(AppRoutes.tickets),
+                                onTap: () => _goToTickets(),
                               ),
                               _StatCard(
                                 label: 'Diproses',
@@ -114,7 +124,7 @@ class DashboardScreen extends StatelessWidget {
                                 color: AppColors.statusInProgress,
                                 bgColor: AppColors.statusInProgressBg,
                                 icon: Icons.sync_outlined,
-                                onTap: () => Get.toNamed(AppRoutes.tickets),
+                                onTap: () => _goToTickets(),
                               ),
                               _StatCard(
                                 label: 'Selesai',
@@ -122,7 +132,7 @@ class DashboardScreen extends StatelessWidget {
                                 color: AppColors.statusResolved,
                                 bgColor: AppColors.statusResolvedBg,
                                 icon: Icons.check_circle_outline,
-                                onTap: () => Get.toNamed(AppRoutes.tickets),
+                                onTap: () => _goToTickets(),
                               ),
                               _StatCard(
                                 label: 'Ditutup',
@@ -130,11 +140,51 @@ class DashboardScreen extends StatelessWidget {
                                 color: AppColors.statusClosed,
                                 bgColor: AppColors.statusClosedBg,
                                 icon: Icons.archive_outlined,
-                                onTap: () => Get.toNamed(AppRoutes.tickets),
+                                onTap: () => _goToTickets(),
                               ),
                             ],
                           ),
                           const SizedBox(height: 16),
+
+                          // ── Kartu khusus Helpdesk ──────────────────────
+                          Obx(() {
+                            if (!authCtrl.isHelpdesk) {
+                              return const SizedBox.shrink();
+                            }
+                            final s = dashCtrl.stats.value;
+                            return Column(
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _StatCard(
+                                        label: 'Ditugaskan ke Saya',
+                                        value: s.assignedToMe,
+                                        color: AppColors.primary,
+                                        bgColor: AppColors.primaryContainer,
+                                        icon: Icons.assignment_ind_outlined,
+                                        onTap: () =>
+                                            _goToTickets(),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: _StatCard(
+                                        label: 'Belum Ditugaskan',
+                                        value: s.unassigned,
+                                        color: AppColors.warning,
+                                        bgColor: const Color(0xFFFFF8E1),
+                                        icon: Icons.person_search_outlined,
+                                        onTap: () =>
+                                            _goToTickets(),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                              ],
+                            );
+                          }),
 
                           // Pie chart
                           if (s.total > 0) _PieChartCard(stats: s),
@@ -147,37 +197,53 @@ class DashboardScreen extends StatelessWidget {
                     // Quick actions
                     Text('Aksi Cepat', style: AppTextStyles.titleLarge),
                     const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _QuickAction(
-                            label: 'Buat Tiket',
-                            icon: Icons.add_circle_outline,
-                            color: AppColors.primary,
-                            onTap: () =>
-                                Get.toNamed(AppRoutes.createTicket),
+                    Obx(() {
+                      final isHelpdesk = authCtrl.isHelpdesk;
+                      return Row(
+                        children: [
+                          if (!isHelpdesk) ...[
+                            Expanded(
+                              child: _QuickAction(
+                                label: 'Buat Tiket',
+                                icon: Icons.add_circle_outline,
+                                color: AppColors.primary,
+                                onTap: () =>
+                                    Get.toNamed(AppRoutes.createTicket),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                          ],
+                          Expanded(
+                            child: _QuickAction(
+                              label: isHelpdesk ? 'Kelola Tiket' : 'Tiket Saya',
+                              icon: Icons.confirmation_number_outlined,
+                              color: AppColors.secondary,
+                              onTap: () => _goToTickets(),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _QuickAction(
-                            label: 'Tiket Saya',
-                            icon: Icons.confirmation_number_outlined,
-                            color: AppColors.secondary,
-                            onTap: () => Get.toNamed(AppRoutes.tickets),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _QuickAction(
+                              label: 'Riwayat',
+                              icon: Icons.history_rounded,
+                              color: AppColors.info,
+                              onTap: () => Get.toNamed(AppRoutes.history),
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _QuickAction(
-                            label: 'Riwayat',
-                            icon: Icons.history_rounded,
-                            color: AppColors.info,
-                            onTap: () => Get.toNamed(AppRoutes.history),
-                          ),
-                        ),
-                      ],
-                    ),
+                          if (authCtrl.isAdmin) ...[
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: _QuickAction(
+                                label: 'Manajemen\nUser',
+                                icon: Icons.manage_accounts_outlined,
+                                color: const Color(0xFF7B1FA2),
+                                onTap: () => Get.toNamed(AppRoutes.admin),
+                              ),
+                            ),
+                          ],
+                        ],
+                      );
+                    }),
                     const SizedBox(height: 24),
 
                     // Recent tickets
@@ -186,7 +252,7 @@ class DashboardScreen extends StatelessWidget {
                         Text('Tiket Terbaru', style: AppTextStyles.titleLarge),
                         const Spacer(),
                         TextButton(
-                          onPressed: () => Get.toNamed(AppRoutes.tickets),
+                          onPressed: () => _goToTickets(),
                           child: const Text('Lihat Semua'),
                         ),
                       ],

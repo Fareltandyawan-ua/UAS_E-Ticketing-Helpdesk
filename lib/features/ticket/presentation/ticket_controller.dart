@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/network/supabase_service.dart';
 import '../data/ticket_api.dart';
 import '../data/ticket_model.dart';
 import '../../auth/data/auth_model.dart';
 
 class TicketController extends GetxController {
   final TicketApi _api = TicketApi();
+  final _db = SupabaseService.client;
 
   // List state
   final RxList<TicketModel> tickets = <TicketModel>[].obs;
@@ -22,24 +25,24 @@ class TicketController extends GetxController {
   final RxBool isLoadingDetail = false.obs;
   final RxList<TicketTrackingModel> trackingList = <TicketTrackingModel>[].obs;
 
-  // Comment
-  final commentController = TextEditingController();
-  final RxBool isSubmittingComment = false.obs;
-  final RxBool isUpdatingStatus = false.obs;
-
   // Assign tiket
   final RxList<UserModel> helpdeskUsers = <UserModel>[].obs;
   final RxBool isLoadingHelpdeskUsers = false.obs;
   final RxBool isAssigning = false.obs;
+  final RxBool isUpdatingStatus = false.obs;
 
   // History
   final RxList<TicketModel> historyList = <TicketModel>[].obs;
   final RxBool isLoadingHistory = false.obs;
 
+  // Realtime channel
+  RealtimeChannel? _ticketChannel;
+
   @override
   void onInit() {
     super.onInit();
     fetchTickets();
+    _subscribeRealtime();
     debounce(
       searchQuery,
       (_) => refreshTickets(),
@@ -49,14 +52,55 @@ class TicketController extends GetxController {
 
   @override
   void onClose() {
-    commentController.dispose();
+    if (_ticketChannel != null) {
+      _db.removeChannel(_ticketChannel!);
+      _ticketChannel = null;
+    }
     super.onClose();
+  }
+
+  /// Subscribe Realtime pada tabel tickets
+  /// INSERT → tambahkan ke list, UPDATE → update item di list, DELETE → hapus dari list
+  void _subscribeRealtime() {
+    _ticketChannel = _db
+        .channel('ticket-list-changes')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'tickets',
+          callback: (payload) {
+            // Saat ada tiket baru, refresh seluruh list agar relasi terbawa
+            refreshTickets();
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'tickets',
+          callback: (payload) {
+            final updatedId = payload.newRecord['id']?.toString();
+            if (updatedId == null) return;
+
+            // Update selectedTicket jika sedang dibuka
+            if (selectedTicket.value?.id == updatedId) {
+              loadTicketDetail(updatedId);
+            }
+
+            // Update item di ticket list secara lokal (status, assigned_to)
+            final idx = tickets.indexWhere((t) => t.id == updatedId);
+            if (idx >= 0) {
+              // Refresh untuk mendapatkan data terbaru dengan relasi
+              refreshTickets();
+            }
+          },
+        )
+        .subscribe();
   }
 
   // ── Fetch tickets ──────────────────────────────────────────────────────────
   Future<void> fetchTickets({
     bool loadMore = false,
-    String? filterByUserId, // pass userId jika role user biasa
+    String? filterByUserId,
   }) async {
     if (loadMore) {
       if (!_hasMore || isLoadingMore.value) return;
@@ -71,7 +115,8 @@ class TicketController extends GetxController {
     try {
       final result = await _api.getTickets(
         status: filterStatus.value.isEmpty ? null : filterStatus.value,
-        priority: filterPriority.value.isEmpty ? null : filterPriority.value,
+        priority:
+            filterPriority.value.isEmpty ? null : filterPriority.value,
         search: searchQuery.value.isEmpty ? null : searchQuery.value,
         page: _page,
         createdBy: filterByUserId,
@@ -79,13 +124,10 @@ class TicketController extends GetxController {
       loadMore ? tickets.addAll(result) : tickets.assignAll(result);
       if (result.length < 20) _hasMore = false;
     } catch (e) {
-      Get.snackbar(
-        'Error',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white);
     } finally {
       isLoadingList.value = false;
       isLoadingMore.value = false;
@@ -105,7 +147,8 @@ class TicketController extends GetxController {
       selectedTicket.value = await _api.getTicketDetail(id);
       trackingList.assignAll(await _api.getTracking(id));
     } catch (e) {
-      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isLoadingDetail.value = false;
     }
@@ -117,7 +160,7 @@ class TicketController extends GetxController {
     required String desc,
     required String priority,
     required String category,
-    List<dynamic>? attachments, // List<File> dari image_picker
+    List<dynamic>? attachments,
   }) async {
     try {
       await _api.createTicket(
@@ -129,21 +172,15 @@ class TicketController extends GetxController {
       );
       Get.back();
       await refreshTickets();
-      Get.snackbar(
-        'Berhasil',
-        'Tiket berhasil dibuat',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-      );
+      Get.snackbar('Berhasil', 'Tiket berhasil dibuat',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white);
     } catch (e) {
-      Get.snackbar(
-        'Error',
-        e.toString(),
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white);
     }
   }
 
@@ -155,17 +192,14 @@ class TicketController extends GetxController {
       selectedTicket.value = updated;
       final idx = tickets.indexWhere((t) => t.id == ticketId);
       if (idx >= 0) tickets[idx] = updated;
-      // Refresh tracking agar timeline terupdate otomatis
       trackingList.assignAll(await _api.getTracking(ticketId));
-      Get.snackbar(
-        'Berhasil',
-        'Status tiket diperbarui',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-      );
+      Get.snackbar('Berhasil', 'Status tiket diperbarui',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white);
     } catch (e) {
-      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isUpdatingStatus.value = false;
     }
@@ -173,12 +207,13 @@ class TicketController extends GetxController {
 
   // ── Assign tiket ────────────────────────────────────────────────────────────
   Future<void> loadHelpdeskUsers() async {
-    if (helpdeskUsers.isNotEmpty) return; // cache sederhana
+    if (helpdeskUsers.isNotEmpty) return;
     isLoadingHelpdeskUsers.value = true;
     try {
       helpdeskUsers.assignAll(await _api.getHelpdeskUsers());
     } catch (e) {
-      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isLoadingHelpdeskUsers.value = false;
     }
@@ -191,50 +226,15 @@ class TicketController extends GetxController {
       selectedTicket.value = updated;
       final idx = tickets.indexWhere((t) => t.id == ticketId);
       if (idx >= 0) tickets[idx] = updated;
-      Get.snackbar(
-        'Berhasil',
-        'Tiket berhasil di-assign',
-        snackPosition: SnackPosition.BOTTOM,
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-      );
+      Get.snackbar('Berhasil', 'Tiket berhasil di-assign',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white);
     } catch (e) {
-      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isAssigning.value = false;
-    }
-  }
-
-  // ── Comment ────────────────────────────────────────────────────────────────
-  Future<void> addComment(String ticketId) async {
-    if (commentController.text.trim().isEmpty) return;
-    isSubmittingComment.value = true;
-    try {
-      final comment = await _api.addComment(
-        ticketId,
-        commentController.text.trim(),
-      );
-      commentController.clear();
-      if (selectedTicket.value != null) {
-        selectedTicket.value = TicketModel(
-          id: selectedTicket.value!.id,
-          title: selectedTicket.value!.title,
-          description: selectedTicket.value!.description,
-          status: selectedTicket.value!.status,
-          priority: selectedTicket.value!.priority,
-          category: selectedTicket.value!.category,
-          createdBy: selectedTicket.value!.createdBy,
-          assignedTo: selectedTicket.value!.assignedTo,
-          attachments: selectedTicket.value!.attachments,
-          comments: [...selectedTicket.value!.comments, comment],
-          createdAt: selectedTicket.value!.createdAt,
-          updatedAt: DateTime.now(),
-        );
-      }
-    } catch (e) {
-      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
-    } finally {
-      isSubmittingComment.value = false;
     }
   }
 
@@ -244,7 +244,8 @@ class TicketController extends GetxController {
     try {
       historyList.assignAll(await _api.getHistory(userId: userId));
     } catch (e) {
-      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM);
     } finally {
       isLoadingHistory.value = false;
     }

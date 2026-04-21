@@ -1,12 +1,12 @@
-// ─────────────────────────────────────────────
-// dashboard_model.dart
-// ─────────────────────────────────────────────
 class DashboardStats {
   final int total;
   final int open;
   final int inProgress;
   final int resolved;
   final int closed;
+  // Khusus Helpdesk/Admin
+  final int assignedToMe;
+  final int unassigned;
 
   DashboardStats({
     required this.total,
@@ -14,18 +14,17 @@ class DashboardStats {
     required this.inProgress,
     required this.resolved,
     required this.closed,
+    this.assignedToMe = 0,
+    this.unassigned = 0,
   });
 
-  factory DashboardStats.fromJson(Map<String, dynamic> json) {
-    return DashboardStats(
-      total: json['total'] ?? 0,
-      open: json['open'] ?? 0,
-      inProgress: json['in_progress'] ?? 0,
-      resolved: json['resolved'] ?? 0,
-      closed: json['closed'] ?? 0,
-    );
-  }
-
   factory DashboardStats.empty() => DashboardStats(
-        total: 0, open: 0, inProgress: 0, resolved: 0, closed: 0);
+        total: 0,
+        open: 0,
+        inProgress: 0,
+        resolved: 0,
+        closed: 0,
+        assignedToMe: 0,
+        unassigned: 0,
+      );
 }

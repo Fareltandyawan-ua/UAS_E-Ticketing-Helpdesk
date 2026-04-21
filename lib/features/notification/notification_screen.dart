@@ -8,30 +8,70 @@ import '../../routes/app_routes.dart';
 import 'notification_model.dart';
 import 'notification_controller.dart';
 
-// ─────────────────────────────────────────────
-// NOTIFICATION SCREEN
-// ─────────────────────────────────────────────
-class NotificationScreen extends StatelessWidget {
+class NotificationScreen extends StatefulWidget {
   const NotificationScreen({super.key});
 
   @override
+  State<NotificationScreen> createState() => _NotificationScreenState();
+}
+
+class _NotificationScreenState extends State<NotificationScreen>
+    with WidgetsBindingObserver {
+  late NotificationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = Get.find<NotificationController>();
+    WidgetsBinding.instance.addObserver(this);
+    // Refresh setiap kali screen ini pertama kali dibuka / menjadi aktif
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ctrl.fetchNotifications();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Refresh saat app kembali ke foreground
+    if (state == AppLifecycleState.resumed) {
+      _ctrl.fetchNotifications();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final ctrl = Get.find<NotificationController>();
+    // Tombol back hanya tampil jika ada rute sebelumnya (bukan dari tab)
+    final canPop = Navigator.canPop(context);
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Notifikasi'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded),
-          onPressed: () => Get.back(),
-        ),
+        // Hanya tampilkan back button jika bisa kembali
+        leading: canPop
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded),
+                onPressed: () => Get.back(),
+              )
+            : null,
+        automaticallyImplyLeading: canPop,
         actions: [
+          // Refresh manual
+          IconButton(
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _ctrl.fetchNotifications,
+          ),
           Obx(() {
-            if (ctrl.unreadCount.value == 0) return const SizedBox.shrink();
+            if (_ctrl.unreadCount.value == 0) return const SizedBox.shrink();
             return TextButton(
-              onPressed: ctrl.markAllRead,
+              onPressed: _ctrl.markAllRead,
               child: const Text(
-                'Tandai semua dibaca',
+                'Baca semua',
                 style: TextStyle(fontSize: 12),
               ),
             );
@@ -39,27 +79,38 @@ class NotificationScreen extends StatelessWidget {
         ],
       ),
       body: Obx(() {
-        if (ctrl.isLoading.value) {
+        if (_ctrl.isLoading.value) {
           return const Center(child: CircularProgressIndicator());
         }
-        if (ctrl.notifications.isEmpty) {
-          return const EmptyState(
-            title: 'Tidak ada notifikasi',
-            subtitle: 'Notifikasi update tiket akan muncul di sini',
-            icon: Icons.notifications_none_outlined,
+        if (_ctrl.notifications.isEmpty) {
+          return RefreshIndicator(
+            onRefresh: _ctrl.fetchNotifications,
+            child: const SingleChildScrollView(
+              physics: AlwaysScrollableScrollPhysics(),
+              child: SizedBox(
+                height: 400,
+                child: EmptyState(
+                  title: 'Tidak ada notifikasi',
+                  subtitle: 'Notifikasi update tiket akan muncul di sini',
+                  icon: Icons.notifications_none_outlined,
+                ),
+              ),
+            ),
           );
         }
         return RefreshIndicator(
-          onRefresh: ctrl.fetchNotifications,
+          onRefresh: _ctrl.fetchNotifications,
           child: ListView.separated(
-            itemCount: ctrl.notifications.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+            physics: const AlwaysScrollableScrollPhysics(),
+            itemCount: _ctrl.notifications.length,
+            separatorBuilder: (_, __) =>
+                const Divider(height: 1, indent: 72),
             itemBuilder: (_, i) {
-              final notif = ctrl.notifications[i];
+              final notif = _ctrl.notifications[i];
               return _NotificationTile(
                 notif: notif,
                 onTap: () {
-                  if (!notif.isRead) ctrl.markRead(notif.id);
+                  if (!notif.isRead) _ctrl.markRead(notif.id);
                   if (notif.ticketId != null) {
                     Get.toNamed(
                       AppRoutes.ticketDetail,
@@ -84,18 +135,17 @@ class _NotificationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
       onTap: onTap,
       child: Container(
         color: notif.isRead
             ? null
-            : AppColors.primaryContainer.withOpacity(0.3),
+            : AppColors.primaryContainer.withValues(alpha: 0.3),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Leading icon
               Container(
                 width: 44,
                 height: 44,
@@ -109,13 +159,13 @@ class _NotificationTile extends StatelessWidget {
                   notif.ticketId != null
                       ? Icons.confirmation_number_outlined
                       : Icons.notifications_outlined,
-                  color:
-                      notif.isRead ? AppColors.grey400 : AppColors.primary,
+                  color: notif.isRead
+                      ? AppColors.grey400
+                      : AppColors.primary,
                   size: 20,
                 ),
               ),
               const SizedBox(width: 12),
-              // Content
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -134,8 +184,7 @@ class _NotificationTile extends StatelessWidget {
                     Text(
                       notif.body,
                       style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.grey500,
-                      ),
+                          color: AppColors.grey500),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -143,14 +192,12 @@ class _NotificationTile extends StatelessWidget {
                     Text(
                       DateFormatter.timeAgo(notif.createdAt),
                       style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.grey400,
-                      ),
+                          color: AppColors.grey400),
                     ),
                   ],
                 ),
               ),
               const SizedBox(width: 12),
-              // Trailing unread indicator
               if (!notif.isRead)
                 Container(
                   width: 8,

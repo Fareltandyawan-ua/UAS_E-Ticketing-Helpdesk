@@ -1,13 +1,85 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
-import '../../core/widgets/app_widgets.dart';
 import '../auth/presentation/auth_controller.dart';
 import '../../routes/app_routes.dart';
+import '../../core/network/supabase_service.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _isDark = false;
+  bool _isUploadingAvatar = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isDark = Get.isDarkMode;
+  }
+
+  Future<void> _pickAndUploadAvatar() async {
+    final ctrl = Get.find<AuthController>();
+    final user = ctrl.currentUser.value;
+    if (user == null) return;
+
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 800,
+    );
+    if (picked == null || !mounted) return;
+
+    setState(() => _isUploadingAvatar = true);
+    try {
+      final fileName =
+          '${user.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final bytes = await picked.readAsBytes();
+
+      // Upload ke Supabase Storage bucket 'avatars'
+      await SupabaseService.client.storage
+          .from('avatars')
+          .uploadBinary(fileName, bytes);
+
+      final publicUrl = SupabaseService.client.storage
+          .from('avatars')
+          .getPublicUrl(fileName);
+
+      // Update kolom avatar_url di tabel profiles
+      await SupabaseService.client
+          .from('profiles')
+          .update({'avatar_url': publicUrl})
+          .eq('id', user.id);
+
+      // Update local user state
+      ctrl.currentUser.value = user.copyWith(avatar: publicUrl);
+
+      Get.snackbar(
+        'Berhasil',
+        'Foto profil diperbarui',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+    } catch (e) {
+      Get.snackbar(
+        'Error',
+        'Gagal upload foto: $e',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    } finally {
+      if (mounted) setState(() => _isUploadingAvatar = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -33,45 +105,52 @@ class ProfileScreen extends StatelessWidget {
             children: [
               // ── Avatar ───────────────────────────────────────────────────
               Center(
-                child: Stack(
-                  children: [
-                    CircleAvatar(
-                      radius: 50,
-                      backgroundColor: AppColors.primaryContainer,
-                      backgroundImage: user.avatar != null
-                          ? NetworkImage(user.avatar!)
-                          : null,
-                      child: user.avatar == null
-                          ? Text(
-                              user.name.isNotEmpty
-                                  ? user.name[0].toUpperCase()
-                                  : '?',
-                              style: const TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w600,
+                child: GestureDetector(
+                  onTap: _isUploadingAvatar ? null : _pickAndUploadAvatar,
+                  child: Stack(
+                    children: [
+                      CircleAvatar(
+                        radius: 50,
+                        backgroundColor: AppColors.primaryContainer,
+                        backgroundImage: user.avatar != null
+                            ? NetworkImage(user.avatar!)
+                            : null,
+                        child: _isUploadingAvatar
+                            ? const CircularProgressIndicator(
                                 color: AppColors.primary,
-                              ),
-                            )
-                          : null,
-                    ),
-                    Positioned(
-                      bottom: 0,
-                      right: 0,
-                      child: Container(
-                        width: 28,
-                        height: 28,
-                        decoration: const BoxDecoration(
-                          color: AppColors.primary,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(
-                          Icons.camera_alt,
-                          size: 15,
-                          color: Colors.white,
+                              )
+                            : user.avatar == null
+                            ? Text(
+                                user.name.isNotEmpty
+                                    ? user.name[0].toUpperCase()
+                                    : '?',
+                                style: const TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              )
+                            : null,
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          width: 28,
+                          height: 28,
+                          decoration: const BoxDecoration(
+                            color: AppColors.primary,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.camera_alt,
+                            size: 15,
+                            color: Colors.white,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -109,7 +188,7 @@ class ProfileScreen extends StatelessWidget {
               // ── Settings card ─────────────────────────────────────────────
               _Card(
                 children: [
-                  // Dark mode — ROW MANUAL agar tidak overflow
+                  // Dark mode toggle — ikon berubah sesuai tema aktif
                   Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
@@ -117,29 +196,32 @@ class ProfileScreen extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.dark_mode_outlined,
-                          color: AppColors.grey500,
+                        Icon(
+                          // Bug 8 fix: icon berubah sesuai state tema
+                          _isDark
+                              ? Icons.dark_mode_rounded
+                              : Icons.light_mode_rounded,
+                          color: _isDark
+                              ? AppColors.warning
+                              : AppColors.grey500,
                           size: 20,
                         ),
                         const SizedBox(width: 16),
                         Expanded(
                           child: Text(
-                            'Tema Gelap',
+                            _isDark ? 'Tema Gelap' : 'Tema Terang',
                             style: AppTextStyles.bodyMedium,
                           ),
                         ),
-                        StatefulBuilder(
-                          builder: (context, setLocal) => Switch(
-                            value: Get.isDarkMode,
-                            onChanged: (_) {
-                              final newMode = Get.isDarkMode
-                                  ? ThemeMode.light
-                                  : ThemeMode.dark;
-                              Get.changeThemeMode(newMode);
-                              setLocal(() {}); // rebuild switch agar langsung update
-                            },
-                          ),
+                        Switch(
+                          value: _isDark,
+                          onChanged: (val) {
+                            setState(() => _isDark = val);
+                            Get.changeThemeMode(
+                              val ? ThemeMode.dark : ThemeMode.light,
+                            );
+                          },
+                          activeColor: AppColors.primary,
                         ),
                       ],
                     ),
@@ -316,7 +398,7 @@ class _RoleBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(

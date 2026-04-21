@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../data/ticket_model.dart';
+import '../data/ticket_api.dart';
+import 'ticket_controller.dart';
+import '../../auth/presentation/auth_controller.dart';
 import '../../../core/widgets/app_widgets.dart';
 import '../../../core/utils/date_formatter.dart';
 import '../../../routes/app_routes.dart';
-import 'ticket_controller.dart';
-import '../../auth/presentation/auth_controller.dart';
 
 class TicketDetailScreen extends StatefulWidget {
   const TicketDetailScreen({super.key});
@@ -16,17 +18,61 @@ class TicketDetailScreen extends StatefulWidget {
 }
 
 class _TicketDetailScreenState extends State<TicketDetailScreen> {
-  final TicketController _ctrl = Get.find<TicketController>();
-  final AuthController _authCtrl = Get.find<AuthController>();
+  late TicketController _ctrl;
+  late AuthController _authCtrl;
   late String _ticketId;
+
+  // Local comment controller — tidak ikut lifecycle GetX controller
+  final TextEditingController _commentCtrl = TextEditingController();
+  final RxBool _isSubmitting = false.obs;
 
   @override
   void initState() {
     super.initState();
+    _ctrl = Get.find<TicketController>();
+    _authCtrl = Get.find<AuthController>();
     _ticketId = Get.arguments as String;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ctrl.loadTicketDetail(_ticketId);
     });
+  }
+
+  @override
+  void dispose() {
+    _commentCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submitComment() async {
+    final text = _commentCtrl.text.trim();
+    if (text.isEmpty) return;
+    _isSubmitting.value = true;
+    try {
+      final api = TicketApi();
+      final comment = await api.addComment(_ticketId, text);
+      _commentCtrl.clear();
+      if (_ctrl.selectedTicket.value != null) {
+        final t = _ctrl.selectedTicket.value!;
+        _ctrl.selectedTicket.value = TicketModel(
+          id: t.id,
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          priority: t.priority,
+          category: t.category,
+          createdBy: t.createdBy,
+          assignedTo: t.assignedTo,
+          attachments: t.attachments,
+          comments: [...t.comments, comment],
+          createdAt: t.createdAt,
+          updatedAt: DateTime.now(),
+        );
+      }
+    } catch (e) {
+      Get.snackbar('Error', e.toString(), snackPosition: SnackPosition.BOTTOM);
+    } finally {
+      _isSubmitting.value = false;
+    }
   }
 
   @override
@@ -39,14 +85,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           onPressed: () => Get.back(),
         ),
         actions: [
-          // Tombol Tracking — untuk semua role
           IconButton(
             icon: const Icon(Icons.timeline_rounded),
             tooltip: 'Lihat Tracking',
             onPressed: () =>
                 Get.toNamed(AppRoutes.tracking, arguments: _ticketId),
           ),
-          // Tombol edit status — hanya Helpdesk/Admin
           Obx(() {
             if (!_authCtrl.isHelpdesk) return const SizedBox.shrink();
             return PopupMenuButton<String>(
@@ -104,11 +148,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header card
                     _buildHeaderCard(context, ticket),
                     const SizedBox(height: 16),
 
-                    // Description
                     _buildSection(
                       context,
                       title: 'Deskripsi',
@@ -119,7 +161,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                     ),
                     const SizedBox(height: 16),
 
-                    // Attachments
                     if (ticket.attachments.isNotEmpty) ...[
                       _buildSection(
                         context,
@@ -135,34 +176,39 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                       const SizedBox(height: 16),
                     ],
 
-                    // Timeline / Tracking (ringkasan di dalam detail)
-                    if (_ctrl.trackingList.isNotEmpty) ...[
-                      _buildSection(
-                        context,
-                        title: 'Riwayat Status',
-                        trailing: TextButton.icon(
-                          onPressed: () => Get.toNamed(
-                            AppRoutes.tracking,
-                            arguments: _ticketId,
+                    Obx(() {
+                      if (_ctrl.trackingList.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      return Column(
+                        children: [
+                          _buildSection(
+                            context,
+                            title: 'Riwayat Status',
+                            trailing: TextButton.icon(
+                              onPressed: () => Get.toNamed(
+                                AppRoutes.tracking,
+                                arguments: _ticketId,
+                              ),
+                              icon: const Icon(Icons.timeline_rounded, size: 14),
+                              label: const Text('Lihat Semua'),
+                              style: TextButton.styleFrom(
+                                padding: EdgeInsets.zero,
+                                minimumSize: Size.zero,
+                              ),
+                            ),
+                            child: Column(
+                              children: _ctrl.trackingList
+                                  .take(3)
+                                  .map((t) => _TrackingTile(tracking: t))
+                                  .toList(),
+                            ),
                           ),
-                          icon: const Icon(Icons.timeline_rounded, size: 14),
-                          label: const Text('Lihat Semua'),
-                          style: TextButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            minimumSize: Size.zero,
-                          ),
-                        ),
-                        child: Column(
-                          children: _ctrl.trackingList
-                              .take(3)
-                              .map((t) => _TrackingTile(tracking: t))
-                              .toList(),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                    ],
+                          const SizedBox(height: 16),
+                        ],
+                      );
+                    }),
 
-                    // Comments
                     _buildSection(
                       context,
                       title: 'Komentar (${ticket.comments.length})',
@@ -184,8 +230,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 ),
               ),
             ),
-
-            // Comment input
             _buildCommentInput(context),
           ],
         );
@@ -208,9 +252,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
             children: [
               Text(
                 '#${ticket.id}',
-                style: AppTextStyles.labelSmall.copyWith(
-                  color: AppColors.grey400,
-                ),
+                style: AppTextStyles.labelSmall
+                    .copyWith(color: AppColors.grey400),
               ),
               const Spacer(),
               StatusBadge(status: ticket.status),
@@ -220,10 +263,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           Text(ticket.title, style: AppTextStyles.headingSmall),
           const SizedBox(height: 12),
           _InfoRow(
-            icon: Icons.category_outlined,
-            label: 'Kategori',
-            value: ticket.category,
-          ),
+              icon: Icons.category_outlined,
+              label: 'Kategori',
+              value: ticket.category),
           const SizedBox(height: 6),
           _InfoRow(
             icon: Icons.flag_outlined,
@@ -233,23 +275,22 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           ),
           const SizedBox(height: 6),
           _InfoRow(
-            icon: Icons.person_outline,
-            label: 'Dibuat oleh',
-            value: ticket.createdBy?.name ?? '-',
-          ),
+              icon: Icons.person_outline,
+              label: 'Dibuat oleh',
+              value: ticket.createdBy?.name ?? '-'),
           const SizedBox(height: 6),
           _InfoRow(
             icon: Icons.support_agent_outlined,
             label: 'Ditangani oleh',
             value: ticket.assignedTo?.name ?? 'Belum di-assign',
-            valueColor: ticket.assignedTo == null ? AppColors.grey400 : null,
+            valueColor:
+                ticket.assignedTo == null ? AppColors.grey400 : null,
           ),
           const SizedBox(height: 6),
           _InfoRow(
-            icon: Icons.access_time_outlined,
-            label: 'Dibuat',
-            value: DateFormatter.formatWithTime(ticket.createdAt),
-          ),
+              icon: Icons.access_time_outlined,
+              label: 'Dibuat',
+              value: DateFormatter.formatWithTime(ticket.createdAt)),
         ],
       ),
     );
@@ -303,27 +344,25 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         children: [
           Expanded(
             child: TextField(
-              controller: _ctrl.commentController,
+              controller: _commentCtrl,
               decoration: const InputDecoration(
                 hintText: 'Tulis komentar...',
-                contentPadding: EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
               maxLines: null,
             ),
           ),
           const SizedBox(width: 10),
           Obx(
-            () => _ctrl.isSubmittingComment.value
+            () => _isSubmitting.value
                 ? const SizedBox(
                     width: 44,
                     height: 44,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : IconButton.filled(
-                    onPressed: () => _ctrl.addComment(_ticketId),
+                    onPressed: _submitComment,
                     icon: const Icon(Icons.send_rounded),
                     style: IconButton.styleFrom(
                       backgroundColor: AppColors.primary,
@@ -340,8 +379,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -378,15 +416,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 
   void _showAssignSheet(BuildContext context) {
-    // Trigger load helpdesk users
     _ctrl.loadHelpdeskUsers();
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.5,
@@ -408,12 +443,13 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 ),
               ),
               const SizedBox(height: 16),
-              Text('Assign Tiket ke Helpdesk', style: AppTextStyles.titleLarge),
+              Text('Assign Tiket ke Helpdesk',
+                  style: AppTextStyles.titleLarge),
               const SizedBox(height: 4),
               Text(
                 'Pilih petugas yang akan menangani tiket ini',
-                style:
-                    AppTextStyles.bodySmall.copyWith(color: AppColors.grey500),
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.grey500),
               ),
               const SizedBox(height: 16),
               Expanded(
@@ -450,7 +486,8 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                             ),
                           ),
                         ),
-                        title: Text(user.name, style: AppTextStyles.titleSmall),
+                        title: Text(user.name,
+                            style: AppTextStyles.titleSmall),
                         subtitle: Text(
                           user.role == 'admin' ? 'Admin' : 'Helpdesk',
                           style: AppTextStyles.labelSmall
@@ -477,6 +514,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
   }
 }
 
+// ── InfoRow ───────────────────────────────────────────────────────────────────
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -498,10 +536,9 @@ class _InfoRow extends StatelessWidget {
       children: [
         Icon(icon, size: 15, color: AppColors.grey400),
         const SizedBox(width: 6),
-        Text(
-          '$label: ',
-          style: AppTextStyles.bodySmall.copyWith(color: AppColors.grey500),
-        ),
+        Text('$label: ',
+            style:
+                AppTextStyles.bodySmall.copyWith(color: AppColors.grey500)),
         Flexible(
           child: widget ??
               Text(
@@ -518,9 +555,39 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class _CommentTile extends StatelessWidget {
-  final comment;
+// ── AttachmentPreview ─────────────────────────────────────────────────────────
+class _AttachmentPreview extends StatelessWidget {
+  final String url;
+  const _AttachmentPreview({required this.url});
 
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => Get.snackbar('Lampiran', url,
+          snackPosition: SnackPosition.BOTTOM),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.network(
+          url,
+          width: 80,
+          height: 80,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => Container(
+            width: 80,
+            height: 80,
+            color: AppColors.grey100,
+            child: const Icon(Icons.insert_drive_file_outlined,
+                color: AppColors.grey400),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── CommentTile ───────────────────────────────────────────────────────────────
+class _CommentTile extends StatelessWidget {
+  final CommentModel comment;
   const _CommentTile({required this.comment});
 
   @override
@@ -534,12 +601,13 @@ class _CommentTile extends StatelessWidget {
             radius: 16,
             backgroundColor: AppColors.primaryContainer,
             child: Text(
-              (comment.author?.name ?? '?')[0].toUpperCase(),
+              comment.author?.name.isNotEmpty == true
+                  ? comment.author!.name[0].toUpperCase()
+                  : '?',
               style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-              ),
+                  fontSize: 12,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w600),
             ),
           ),
           const SizedBox(width: 10),
@@ -549,16 +617,13 @@ class _CommentTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(
-                      comment.author?.name ?? 'Unknown',
-                      style: AppTextStyles.titleSmall,
-                    ),
+                    Text(comment.author?.name ?? 'User',
+                        style: AppTextStyles.titleSmall),
                     const Spacer(),
                     Text(
                       DateFormatter.timeAgo(comment.createdAt),
-                      style: AppTextStyles.labelSmall.copyWith(
-                        color: AppColors.grey400,
-                      ),
+                      style: AppTextStyles.labelSmall
+                          .copyWith(color: AppColors.grey400),
                     ),
                   ],
                 ),
@@ -573,9 +638,9 @@ class _CommentTile extends StatelessWidget {
   }
 }
 
+// ── TrackingTile ──────────────────────────────────────────────────────────────
 class _TrackingTile extends StatelessWidget {
-  final tracking;
-
+  final TicketTrackingModel tracking;
   const _TrackingTile({required this.tracking});
 
   @override
@@ -604,49 +669,23 @@ class _TrackingTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 StatusBadge(status: tracking.status),
-                const SizedBox(height: 4),
-                Text(tracking.description, style: AppTextStyles.bodySmall),
+                const SizedBox(height: 2),
                 Text(
                   DateFormatter.formatWithTime(tracking.createdAt),
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.grey400,
-                  ),
+                  style: AppTextStyles.labelSmall
+                      .copyWith(color: AppColors.grey400),
                 ),
+                if (tracking.description.isNotEmpty)
+                  Text(
+                    tracking.description,
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.grey500),
+                  ),
               ],
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _AttachmentPreview extends StatelessWidget {
-  final String url;
-
-  const _AttachmentPreview({required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    final isImage =
-        url.endsWith('.jpg') || url.endsWith('.jpeg') || url.endsWith('.png');
-    return Container(
-      width: 80,
-      height: 80,
-      decoration: BoxDecoration(
-        color: AppColors.grey100,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.borderLight),
-      ),
-      child: isImage
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(url, fit: BoxFit.cover),
-            )
-          : const Icon(
-              Icons.insert_drive_file_outlined,
-              color: AppColors.grey500,
-            ),
     );
   }
 }
