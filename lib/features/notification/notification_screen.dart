@@ -109,9 +109,21 @@ class _NotificationScreenState extends State<NotificationScreen>
               final notif = _ctrl.notifications[i];
               return _NotificationTile(
                 notif: notif,
-                onTap: () {
+                onTap: () async {
                   if (!notif.isRead) _ctrl.markRead(notif.id);
                   if (notif.ticketId != null) {
+                    final exists = await _ctrl.ticketExists(notif.ticketId!);
+                    if (!exists) {
+                      _ctrl.fetchNotifications();
+                      Get.snackbar(
+                        'Tiket tidak tersedia',
+                        'Tiket ini sudah dihapus.',
+                        snackPosition: SnackPosition.BOTTOM,
+                        backgroundColor: AppColors.warning,
+                        colorText: Colors.white,
+                      );
+                      return;
+                    }
                     Get.toNamed(
                       AppRoutes.ticketDetail,
                       arguments: notif.ticketId,

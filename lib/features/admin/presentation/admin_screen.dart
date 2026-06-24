@@ -43,30 +43,35 @@ class AdminScreen extends StatelessWidget {
                 ),
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: Row(
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.spaceBetween,
                 children: [
                   _StatChip(
                     label: 'Total',
                     value: '${stats['total'] ?? 0}',
                     icon: Icons.people_rounded,
                   ),
-                  const SizedBox(width: 12),
                   _StatChip(
                     label: 'User',
                     value: '${stats['user'] ?? 0}',
                     icon: Icons.person_rounded,
                   ),
-                  const SizedBox(width: 12),
                   _StatChip(
                     label: 'Helpdesk',
                     value: '${stats['helpdesk'] ?? 0}',
                     icon: Icons.support_agent_rounded,
                   ),
-                  const SizedBox(width: 12),
                   _StatChip(
                     label: 'Admin',
                     value: '${stats['admin'] ?? 0}',
                     icon: Icons.admin_panel_settings_rounded,
+                  ),
+                  _StatChip(
+                    label: 'Nonaktif',
+                    value: '${stats['inactive'] ?? 0}',
+                    icon: Icons.block_rounded,
                   ),
                 ],
               ),
@@ -110,6 +115,8 @@ class AdminScreen extends StatelessWidget {
                     user: list[i],
                     onRoleChange: (newRole) =>
                         ctrl.updateRole(list[i].id, newRole),
+                    onToggleActive: (active) =>
+                        ctrl.toggleActive(list[i].id, active),
                   ),
                 ),
               );
@@ -125,107 +132,168 @@ class AdminScreen extends StatelessWidget {
 class _UserCard extends StatelessWidget {
   final UserModel user;
   final void Function(String) onRoleChange;
+  final void Function(bool) onToggleActive;
 
-  const _UserCard({required this.user, required this.onRoleChange});
+  const _UserCard({
+    required this.user,
+    required this.onRoleChange,
+    required this.onToggleActive,
+  });
 
   @override
   Widget build(BuildContext context) {
     final roleConfig = _getRoleConfig(user.role);
+    final isInactive = !user.isActive;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.borderDark
-              : AppColors.borderLight,
+    return Opacity(
+      opacity: isInactive ? 0.55 : 1.0,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isInactive
+                ? AppColors.error.withOpacity(0.4)
+                : Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.borderDark
+                    : AppColors.borderLight,
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          // Avatar
-          Container(
-            width: 46,
-            height: 46,
-            decoration: BoxDecoration(
-              color: roleConfig['bg'] as Color,
-              shape: BoxShape.circle,
+        child: Row(
+          children: [
+            // Avatar
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: roleConfig['bg'] as Color,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                roleConfig['icon'] as IconData,
+                color: roleConfig['color'] as Color,
+                size: 22,
+              ),
             ),
-            child: Icon(
-              roleConfig['icon'] as IconData,
-              color: roleConfig['color'] as Color,
-              size: 22,
-            ),
-          ),
-          const SizedBox(width: 12),
+            const SizedBox(width: 12),
 
-          // Info
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(user.name, style: AppTextStyles.titleSmall),
-                const SizedBox(height: 2),
-                Text(
-                  user.email,
-                  style: AppTextStyles.bodySmall
-                      .copyWith(color: AppColors.grey500),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 6),
-                // Role badge
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: (roleConfig['bg'] as Color).withOpacity(0.7),
-                    borderRadius: BorderRadius.circular(20),
+            // Info
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(user.name, style: AppTextStyles.titleSmall),
+                  const SizedBox(height: 2),
+                  Text(
+                    user.email,
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.grey500),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                  child: Text(
-                    _roleLabel(user.role),
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: roleConfig['color'] as Color,
-                    ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      // Role badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color:
+                              (roleConfig['bg'] as Color).withOpacity(0.7),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          _roleLabel(user.role),
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: roleConfig['color'] as Color,
+                          ),
+                        ),
+                      ),
+                      if (isInactive) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.error.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'Nonaktif',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.error,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
-                ),
+                ],
+              ),
+            ),
+
+            // Menu aksi
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded,
+                  color: AppColors.grey500),
+              tooltip: 'Aksi',
+              itemBuilder: (_) => [
+                if (user.role != 'user')
+                  _menuItem(
+                      'role:user', Icons.person_rounded, 'Jadikan User'),
+                if (user.role != 'helpdesk')
+                  _menuItem('role:helpdesk', Icons.support_agent_rounded,
+                      'Jadikan Helpdesk'),
+                if (user.role != 'admin')
+                  _menuItem('role:admin',
+                      Icons.admin_panel_settings_rounded, 'Jadikan Admin'),
+                const PopupMenuDivider(),
+                if (user.isActive)
+                  _menuItem(
+                    'deactivate',
+                    Icons.block_rounded,
+                    'Nonaktifkan Akun',
+                    color: AppColors.error,
+                  )
+                else
+                  _menuItem(
+                    'activate',
+                    Icons.check_circle_outline_rounded,
+                    'Aktifkan Akun',
+                    color: AppColors.success,
+                  ),
               ],
+              onSelected: (value) {
+                if (value.startsWith('role:')) {
+                  onRoleChange(value.substring(5));
+                } else if (value == 'deactivate') {
+                  onToggleActive(false);
+                } else if (value == 'activate') {
+                  onToggleActive(true);
+                }
+              },
             ),
-          ),
-
-          // Change role button
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert_rounded, color: AppColors.grey500),
-            tooltip: 'Ubah role',
-            itemBuilder: (_) => [
-              if (user.role != 'user')
-                _roleMenuItem('user', Icons.person_rounded, 'Jadikan User'),
-              if (user.role != 'helpdesk')
-                _roleMenuItem('helpdesk', Icons.support_agent_rounded,
-                    'Jadikan Helpdesk'),
-              if (user.role != 'admin')
-                _roleMenuItem('admin', Icons.admin_panel_settings_rounded,
-                    'Jadikan Admin'),
-            ],
-            onSelected: onRoleChange,
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  PopupMenuItem<String> _roleMenuItem(
-      String value, IconData icon, String label) {
+  PopupMenuItem<String> _menuItem(
+      String value, IconData icon, String label,
+      {Color? color}) {
     return PopupMenuItem(
       value: value,
       child: Row(
         children: [
-          Icon(icon, size: 18, color: AppColors.grey600),
+          Icon(icon, size: 18, color: color ?? AppColors.grey600),
           const SizedBox(width: 12),
-          Text(label),
+          Text(label, style: TextStyle(color: color)),
         ],
       ),
     );
@@ -277,13 +345,17 @@ class _StatChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
+    return SizedBox(
+      width: 72,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, color: Colors.white70, size: 18),
           const SizedBox(height: 4),
           Text(
             value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -292,6 +364,8 @@ class _StatChip extends StatelessWidget {
           ),
           Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.white70, fontSize: 11),
           ),
         ],

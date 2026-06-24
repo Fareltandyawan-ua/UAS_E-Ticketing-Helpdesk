@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:get/get.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/network/supabase_service.dart';
+import '../../core/services/local_notification_service.dart';
 import 'notification_model.dart';
 
 class NotificationController extends GetxController {
@@ -70,16 +71,40 @@ class NotificationController extends GetxController {
               column: 'user_id',
               value: userId,
             ),
-            callback: (payload) {
+            callback: (payload) async {
               try {
                 final newNotif =
                     NotificationModel.fromJson(payload.newRecord);
+
+                // Jangan tampilkan notifikasi untuk tiket yang sudah terhapus.
+                if (newNotif.ticketId != null &&
+                    !await _ticketExists(newNotif.ticketId!)) {
+                  return;
+                }
+
                 notifications.insert(0, newNotif);
                 unreadCount.value =
                     notifications.where((n) => !n.isRead).length;
+
+                // Tampilkan local notification di system tray
+                LocalNotificationService.show(
+                  title: newNotif.title,
+                  body: newNotif.body,
+                  payload: newNotif.ticketId,
+                );
               } catch (_) {
                 fetchNotifications();
               }
+            },
+          )
+          .onPostgresChanges(
+            event: PostgresChangeEvent.delete,
+            schema: 'public',
+            table: 'tickets',
+            callback: (payload) {
+              final deletedTicketId = payload.oldRecord['id']?.toString();
+              if (deletedTicketId == null) return;
+              _removeNotificationsForTicket(deletedTicketId);
             },
           )
           .subscribe();
@@ -105,9 +130,9 @@ class NotificationController extends GetxController {
           .order('created_at', ascending: false)
           .limit(50);
 
-      notifications.assignAll(
-        (data as List).map((e) => NotificationModel.fromJson(e)).toList(),
-      );
+      final fetched =
+          (data as List).map((e) => NotificationModel.fromJson(e)).toList();
+      notifications.assignAll(await _filterExistingTicketNotifications(fetched));
       unreadCount.value = notifications.where((n) => !n.isRead).length;
     } catch (_) {}
 
@@ -144,5 +169,55 @@ class NotificationController extends GetxController {
           .eq('is_read', false);
       await fetchNotifications();
     } catch (_) {}
+  }
+
+  void _removeNotificationsForTicket(String ticketId) {
+    notifications.removeWhere((n) => n.ticketId == ticketId);
+    unreadCount.value = notifications.where((n) => !n.isRead).length;
+  }
+
+  Future<bool> ticketExists(String ticketId) => _ticketExists(ticketId);
+
+  Future<bool> _ticketExists(String ticketId) async {
+    try {
+      final rows = await _db
+          .from('tickets')
+          .select('id')
+          .eq('id', ticketId)
+          .limit(1);
+      return (rows as List).isNotEmpty;
+    } catch (_) {
+      // Jika gagal validasi, jangan blok notifikasi agar tidak kehilangan info penting.
+      return true;
+    }
+  }
+
+  Future<List<NotificationModel>> _filterExistingTicketNotifications(
+    List<NotificationModel> items,
+  ) async {
+    final ticketIds = items
+        .map((n) => n.ticketId)
+        .whereType<String>()
+        .where((id) => id.isNotEmpty)
+        .toSet();
+
+    if (ticketIds.isEmpty) return items;
+
+    try {
+      final rows = await _db
+          .from('tickets')
+          .select('id')
+          .inFilter('id', ticketIds.toList());
+      final existingIds = (rows as List)
+          .map((row) => row['id']?.toString())
+          .whereType<String>()
+          .toSet();
+
+      return items
+          .where((n) => n.ticketId == null || existingIds.contains(n.ticketId))
+          .toList();
+    } catch (_) {
+      return items;
+    }
   }
 }

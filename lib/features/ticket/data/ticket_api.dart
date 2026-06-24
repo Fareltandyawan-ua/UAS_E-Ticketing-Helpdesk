@@ -1,5 +1,6 @@
-import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as p;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/network/supabase_service.dart';
 import '../../auth/data/auth_model.dart';
 import 'ticket_model.dart';
@@ -50,12 +51,22 @@ class TicketApi {
       assigned_to:profiles!tickets_assigned_to_fkey(id, name, username, role),
       comments(id, content, created_at,
         author:profiles!comments_author_id_fkey(id, name, username, role)
-      ),
-      attachments(id, file_url, file_name)
+      )
     ''')
         .eq('id', id)
         .single();
-    return TicketModel.fromJson(data);
+
+    // Ambil lampiran dengan query terpisah agar tidak bergantung pada auto-relasi
+    // PostgREST. Ini lebih aman jika nama foreign key/relationship berbeda.
+    final attachments = await _db
+        .from('attachments')
+        .select('id, file_url, file_name')
+        .eq('ticket_id', id);
+
+    return TicketModel.fromJson({
+      ...data,
+      'attachments': attachments,
+    });
   }
 
   Future<TicketModel> createTicket({
@@ -63,7 +74,7 @@ class TicketApi {
     required String description,
     required String priority,
     required String category,
-    List<File>? attachments,
+    List<XFile>? attachments,
   }) async {
     final userId = SupabaseService.client.auth.currentUser!.id;
     final data = await _db
@@ -84,23 +95,31 @@ class TicketApi {
 
     final ticket = TicketModel.fromJson(data);
 
-    // Upload lampiran ke Supabase Storage jika ada
+    // Upload lampiran ke Supabase Storage jika ada.
+    // Gunakan uploadBinary agar berjalan di mobile, desktop, dan web.
     if (attachments != null && attachments.isNotEmpty) {
       for (final file in attachments) {
-        try {
-          final fileName =
-              '${ticket.id}/${DateTime.now().millisecondsSinceEpoch}_${p.basename(file.path)}';
-          await _db.storage.from('attachments').upload(fileName, file);
-          final fileUrl =
-              _db.storage.from('attachments').getPublicUrl(fileName);
-          await _db.from('attachments').insert({
-            'ticket_id': ticket.id,
-            'file_url': fileUrl,
-            'file_name': p.basename(file.path),
-          });
-        } catch (_) {
-          // Jika satu file gagal, lanjutkan upload file berikutnya
-        }
+        final originalName = file.name.isNotEmpty ? file.name : p.basename(file.path);
+        final safeName = originalName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+        final fileName =
+            '${ticket.id}/${DateTime.now().millisecondsSinceEpoch}_$safeName';
+        final bytes = await file.readAsBytes();
+
+        await _db.storage.from('attachments').uploadBinary(
+              fileName,
+              bytes,
+              fileOptions: FileOptions(
+                upsert: true,
+                contentType: _guessContentType(originalName),
+              ),
+            );
+
+        final fileUrl = _db.storage.from('attachments').getPublicUrl(fileName);
+        await _db.from('attachments').insert({
+          'ticket_id': ticket.id,
+          'file_url': fileUrl,
+          'file_name': originalName,
+        });
       }
     }
 
@@ -167,6 +186,61 @@ class TicketApi {
     return (data as List).map((e) => TicketTrackingModel.fromJson(e)).toList();
   }
 
+  /// Hapus tiket beserta semua data terkait.
+  /// Data terkait dihapus eksplisit agar tidak meninggalkan notifikasi/list stale
+  /// walaupun foreign key belum diset ON DELETE CASCADE.
+  Future<void> deleteTicket(String id) async {
+    // 1. Hapus semua file lampiran di storage (jika ada)
+    try {
+      final files = await _db.storage
+          .from('attachments')
+          .list(path: id);
+      if (files.isNotEmpty) {
+        final paths = files.map((f) => '$id/${f.name}').toList();
+        await _db.storage.from('attachments').remove(paths);
+      }
+    } catch (_) {
+      // Lanjutkan walaupun gagal hapus file (mungkin tidak ada folder)
+    }
+
+    // 2. Hapus data turunan/terkait terlebih dahulu.
+    // Jika table/permission tidak tersedia, tetap lanjut ke delete tiket utama.
+    try {
+      await _db.from('notifications').delete().eq('ticket_id', id);
+    } catch (_) {}
+    try {
+      await _db.from('attachments').delete().eq('ticket_id', id);
+    } catch (_) {}
+    try {
+      await _db.from('comments').delete().eq('ticket_id', id);
+    } catch (_) {}
+    try {
+      await _db.from('ticket_tracking').delete().eq('ticket_id', id);
+    } catch (_) {}
+
+    // 3. Hapus row tiket utama.
+    await _db.from('tickets').delete().eq('id', id);
+  }
+
+  String _guessContentType(String fileName) {
+    final ext = p.extension(fileName).toLowerCase();
+    switch (ext) {
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg';
+      case '.png':
+        return 'image/png';
+      case '.gif':
+        return 'image/gif';
+      case '.webp':
+        return 'image/webp';
+      case '.pdf':
+        return 'application/pdf';
+      default:
+        return 'application/octet-stream';
+    }
+  }
+
   Future<List<TicketModel>> getHistory({String? userId}) async {
     final uid =
         userId ?? SupabaseService.client.auth.currentUser!.id;
@@ -176,7 +250,7 @@ class TicketApi {
           '*, created_by:profiles!tickets_created_by_fkey(id, name, username, role)',
         )
         .eq('created_by', uid)
-        .inFilter('status', ['resolved', 'closed'])
+        .eq('status', 'closed')
         .order('updated_at', ascending: false);
     return (data as List).map((e) => TicketModel.fromJson(e)).toList();
   }

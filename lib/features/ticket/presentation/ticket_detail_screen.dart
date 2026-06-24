@@ -92,7 +92,18 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                 Get.toNamed(AppRoutes.tracking, arguments: _ticketId),
           ),
           Obx(() {
-            if (!_authCtrl.isHelpdesk) return const SizedBox.shrink();
+            final ticket = _ctrl.selectedTicket.value;
+            final currentUserId = _authCtrl.currentUser.value?.id;
+            final isOwner =
+                ticket != null && ticket.createdBy?.id == currentUserId;
+            final isOpen = ticket?.status == 'open';
+            final isUnassigned = ticket?.assignedTo == null;
+            final canDelete =
+                _authCtrl.isAdmin || (isOwner && isOpen && isUnassigned);
+            final canManage = _authCtrl.isHelpdesk; // helpdesk & admin
+
+            if (!canManage && !canDelete) return const SizedBox.shrink();
+
             return PopupMenuButton<String>(
               icon: const Icon(Icons.more_vert_rounded),
               onSelected: (value) {
@@ -100,29 +111,46 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                   _showUpdateStatusSheet(context);
                 } else if (value == 'assign') {
                   _showAssignSheet(context);
+                } else if (value == 'delete') {
+                  _showDeleteConfirm(context);
                 }
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'status',
-                  child: Row(
-                    children: [
-                      Icon(Icons.sync_rounded, size: 18),
-                      SizedBox(width: 12),
-                      Text('Update Status'),
-                    ],
+                if (canManage)
+                  const PopupMenuItem(
+                    value: 'status',
+                    child: Row(
+                      children: [
+                        Icon(Icons.sync_rounded, size: 18),
+                        SizedBox(width: 12),
+                        Text('Update Status'),
+                      ],
+                    ),
                   ),
-                ),
-                const PopupMenuItem(
-                  value: 'assign',
-                  child: Row(
-                    children: [
-                      Icon(Icons.person_add_outlined, size: 18),
-                      SizedBox(width: 12),
-                      Text('Assign Tiket'),
-                    ],
+                if (canManage)
+                  const PopupMenuItem(
+                    value: 'assign',
+                    child: Row(
+                      children: [
+                        Icon(Icons.person_add_outlined, size: 18),
+                        SizedBox(width: 12),
+                        Text('Assign Tiket'),
+                      ],
+                    ),
                   ),
-                ),
+                if (canDelete)
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline_rounded,
+                            size: 18, color: AppColors.error),
+                        SizedBox(width: 12),
+                        Text('Hapus Tiket',
+                            style: TextStyle(color: AppColors.error)),
+                      ],
+                    ),
+                  ),
               ],
             );
           }),
@@ -250,12 +278,16 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         children: [
           Row(
             children: [
-              Text(
-                '#${ticket.id}',
-                style: AppTextStyles.labelSmall
-                    .copyWith(color: AppColors.grey400),
+              Expanded(
+                child: Text(
+                  '#${ticket.id}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.labelSmall
+                      .copyWith(color: AppColors.grey400),
+                ),
               ),
-              const Spacer(),
+              const SizedBox(width: 8),
               StatusBadge(status: ticket.status),
             ],
           ),
@@ -314,9 +346,16 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         children: [
           Row(
             children: [
-              Text(title, style: AppTextStyles.titleMedium),
+              Expanded(
+                child: Text(
+                  title,
+                  style: AppTextStyles.titleMedium,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               if (trailing != null) ...[
-                const Spacer(),
+                const SizedBox(width: 8),
                 trailing,
               ],
             ],
@@ -375,6 +414,50 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     );
   }
 
+  void _showDeleteConfirm(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Hapus Tiket?'),
+        content: const Text(
+          'Tiket akan dihapus permanen beserta semua komentar dan lampirannya. '
+          'Tindakan ini tidak dapat dibatalkan.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Batal'),
+          ),
+          Obx(() => ElevatedButton.icon(
+                onPressed: _ctrl.isDeleting.value
+                    ? null
+                    : () async {
+                        Navigator.pop(context);
+                        final ok = await _ctrl.deleteTicket(_ticketId);
+                        if (ok) Get.back(); // tutup detail screen
+                      },
+                icon: _ctrl.isDeleting.value
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.delete_outline_rounded, size: 16),
+                label: const Text('Hapus'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.error,
+                  foregroundColor: Colors.white,
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
   void _showUpdateStatusSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -388,7 +471,7 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           children: [
             Text('Update Status Tiket', style: AppTextStyles.titleLarge),
             const SizedBox(height: 16),
-            ...['open', 'in_progress', 'resolved', 'closed'].map(
+            ...['open', 'assigned', 'in_progress', 'closed'].map(
               (s) => GestureDetector(
                 onTap: () {
                   Navigator.pop(context);
@@ -563,8 +646,7 @@ class _AttachmentPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => Get.snackbar('Lampiran', url,
-          snackPosition: SnackPosition.BOTTOM),
+      onTap: () => _showAttachmentPreview(context, url),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Image.network(
@@ -578,6 +660,93 @@ class _AttachmentPreview extends StatelessWidget {
             color: AppColors.grey100,
             child: const Icon(Icons.insert_drive_file_outlined,
                 color: AppColors.grey400),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showAttachmentPreview(BuildContext context, String url) {
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        insetPadding: const EdgeInsets.all(16),
+        backgroundColor: Colors.black,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: SizedBox(
+          width: MediaQuery.of(context).size.width * 0.9,
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: Stack(
+            children: [
+              ClipRRect(
+              borderRadius: BorderRadius.circular(16),
+              child: InteractiveViewer(
+                minScale: 0.8,
+                maxScale: 4,
+                child: Center(
+                  child: Image.network(
+                    url,
+                    fit: BoxFit.contain,
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const SizedBox(
+                        height: 280,
+                        child: Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        ),
+                      );
+                    },
+                    errorBuilder: (_, __, ___) => SizedBox(
+                      height: 260,
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.insert_drive_file_outlined,
+                                color: Colors.white70,
+                                size: 48,
+                              ),
+                              const SizedBox(height: 12),
+                              Text(
+                                'Lampiran tidak dapat ditampilkan sebagai gambar.',
+                                textAlign: TextAlign.center,
+                                style: AppTextStyles.bodyMedium
+                                    .copyWith(color: Colors.white70),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                url,
+                                textAlign: TextAlign.center,
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.labelSmall
+                                    .copyWith(color: Colors.white54),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+              Positioned(
+                top: 8,
+                right: 8,
+                child: IconButton.filled(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded),
+                  style: IconButton.styleFrom(
+                    backgroundColor: Colors.black54,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -617,9 +786,15 @@ class _CommentTile extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Text(comment.author?.name ?? 'User',
-                        style: AppTextStyles.titleSmall),
-                    const Spacer(),
+                    Expanded(
+                      child: Text(
+                        comment.author?.name ?? 'User',
+                        style: AppTextStyles.titleSmall,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
                     Text(
                       DateFormatter.timeAgo(comment.createdAt),
                       style: AppTextStyles.labelSmall

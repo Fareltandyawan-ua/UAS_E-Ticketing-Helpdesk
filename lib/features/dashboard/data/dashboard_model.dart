@@ -2,7 +2,7 @@ class DashboardStats {
   final int total;
   final int open;
   final int inProgress;
-  final int resolved;
+  final int assigned;
   final int closed;
   // Khusus Helpdesk/Admin
   final int assignedToMe;
@@ -12,7 +12,7 @@ class DashboardStats {
     required this.total,
     required this.open,
     required this.inProgress,
-    required this.resolved,
+    required this.assigned,
     required this.closed,
     this.assignedToMe = 0,
     this.unassigned = 0,
@@ -22,7 +22,7 @@ class DashboardStats {
         total: 0,
         open: 0,
         inProgress: 0,
-        resolved: 0,
+        assigned: 0,
         closed: 0,
         assignedToMe: 0,
         unassigned: 0,

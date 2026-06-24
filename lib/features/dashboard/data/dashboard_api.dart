@@ -19,7 +19,7 @@ class DashboardApi {
 
     final data = await query;
 
-    int open = 0, inProgress = 0, resolved = 0, closed = 0;
+    int open = 0, assigned = 0, inProgress = 0, closed = 0;
     int assignedToMe = 0, unassigned = 0;
 
     for (final row in (data as List)) {
@@ -28,8 +28,8 @@ class DashboardApi {
 
       switch (status) {
         case 'open':          open++;          break;
+        case 'assigned':      assigned++;      break;
         case 'in_progress':   inProgress++;    break;
-        case 'resolved':      resolved++;      break;
         case 'closed':        closed++;        break;
       }
 
@@ -44,8 +44,8 @@ class DashboardApi {
     return DashboardStats(
       total:        data.length,
       open:         open,
+      assigned:     assigned,
       inProgress:   inProgress,
-      resolved:     resolved,
       closed:       closed,
       assignedToMe: assignedToMe,
       unassigned:   unassigned,

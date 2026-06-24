@@ -1,11 +1,15 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide LocalStorage;
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../auth/presentation/auth_controller.dart';
 import '../../routes/app_routes.dart';
 import '../../core/network/supabase_service.dart';
+import '../../core/storage/local_storage.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -15,19 +19,22 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool _isDark = false;
   bool _isUploadingAvatar = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _isDark = Get.isDarkMode;
-  }
 
   Future<void> _pickAndUploadAvatar() async {
     final ctrl = Get.find<AuthController>();
     final user = ctrl.currentUser.value;
-    if (user == null) return;
+    final authUser = SupabaseService.client.auth.currentUser;
+    if (user == null || authUser == null) {
+      Get.snackbar(
+        'Error',
+        'Sesi login tidak ditemukan. Silakan login ulang.',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+      return;
+    }
 
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -39,27 +46,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     setState(() => _isUploadingAvatar = true);
     try {
-      final fileName =
-          '${user.id}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final extension = picked.name.split('.').last.toLowerCase();
+      final safeExtension = ['jpg', 'jpeg', 'png', 'webp'].contains(extension)
+          ? extension
+          : 'jpg';
+      final filePath =
+          '${authUser.id}/avatar_${DateTime.now().millisecondsSinceEpoch}.$safeExtension';
       final bytes = await picked.readAsBytes();
 
-      // Upload ke Supabase Storage bucket 'avatars'
+      // Upload ke Supabase Storage bucket 'avatars'.
+      // Path dibuat di dalam folder user id agar cocok dengan policy umum Supabase.
       await SupabaseService.client.storage
           .from('avatars')
-          .uploadBinary(fileName, bytes);
+          .uploadBinary(
+            filePath,
+            bytes,
+            fileOptions: FileOptions(
+              contentType: picked.mimeType ?? 'image/$safeExtension',
+              upsert: true,
+            ),
+          );
 
       final publicUrl = SupabaseService.client.storage
           .from('avatars')
-          .getPublicUrl(fileName);
+          .getPublicUrl(filePath);
 
       // Update kolom avatar_url di tabel profiles
       await SupabaseService.client
           .from('profiles')
           .update({'avatar_url': publicUrl})
-          .eq('id', user.id);
+          .eq('id', authUser.id);
 
-      // Update local user state
-      ctrl.currentUser.value = user.copyWith(avatar: publicUrl);
+      // Update local user state + local storage supaya foto tetap muncul setelah app dibuka ulang.
+      final updatedUser = user.copyWith(avatar: publicUrl);
+      ctrl.currentUser.value = updatedUser;
+      await LocalStorage.saveUserData(jsonEncode(updatedUser.toJson()));
+      await NetworkImage(publicUrl).evict();
 
       Get.snackbar(
         'Berhasil',
@@ -188,55 +210,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
               // ── Settings card ─────────────────────────────────────────────
               _Card(
                 children: [
-                  // Dark mode toggle — ikon berubah sesuai tema aktif
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          // Bug 8 fix: icon berubah sesuai state tema
-                          _isDark
-                              ? Icons.dark_mode_rounded
-                              : Icons.light_mode_rounded,
-                          color: _isDark
-                              ? AppColors.warning
-                              : AppColors.grey500,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Text(
-                            _isDark ? 'Tema Gelap' : 'Tema Terang',
-                            style: AppTextStyles.bodyMedium,
-                          ),
-                        ),
-                        Switch(
-                          value: _isDark,
-                          onChanged: (val) {
-                            setState(() => _isDark = val);
-                            Get.changeThemeMode(
-                              val ? ThemeMode.dark : ThemeMode.light,
-                            );
-                          },
-                          activeColor: AppColors.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1, indent: 56),
                   _NavRow(
-                    icon: Icons.notifications_outlined,
-                    label: 'Notifikasi',
-                    onTap: () => Get.toNamed(AppRoutes.notifications),
-                  ),
-                  const Divider(height: 1, indent: 56),
-                  _NavRow(
-                    icon: Icons.history_rounded,
-                    label: 'Riwayat Tiket',
-                    onTap: () => Get.toNamed(AppRoutes.history),
+                    icon: Icons.settings_outlined,
+                    label: 'Pengaturan',
+                    onTap: () => Get.toNamed(AppRoutes.settings),
                   ),
                 ],
               ),

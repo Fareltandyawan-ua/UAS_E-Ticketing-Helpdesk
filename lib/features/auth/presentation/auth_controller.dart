@@ -1,7 +1,8 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthException, UserAttributes;
 import '../data/auth_model.dart';
 import '../../../core/network/supabase_service.dart';
 import '../../../core/storage/secure_storage.dart';
@@ -20,6 +21,9 @@ class AuthController extends GetxController {
   final emailController = TextEditingController();
   final confirmPasswordController = TextEditingController();
   final resetEmailController = TextEditingController();
+  final currentPasswordController = TextEditingController();
+  final newPasswordController = TextEditingController();
+  final confirmNewPasswordController = TextEditingController();
 
   bool get isLoggedIn => currentUser.value != null;
   bool get isAdmin => currentUser.value?.isAdmin ?? false;
@@ -39,6 +43,9 @@ class AuthController extends GetxController {
     emailController.dispose();
     confirmPasswordController.dispose();
     resetEmailController.dispose();
+    currentPasswordController.dispose();
+    newPasswordController.dispose();
+    confirmNewPasswordController.dispose();
     super.onClose();
   }
 
@@ -69,10 +76,20 @@ class AuthController extends GetxController {
           .eq('id', response.user!.id)
           .single();
 
-      currentUser.value = UserModel.fromJson({
+      final user = UserModel.fromJson({
         ...profile,
         'email': response.user!.email ?? '',
       });
+
+      // Cek akun aktif — blokir login jika akun dinonaktifkan admin
+      if (!user.isActive) {
+        await SupabaseService.client.auth.signOut();
+        errorMessage.value =
+            'Akun Anda telah dinonaktifkan. Hubungi admin untuk informasi lebih lanjut.';
+        return;
+      }
+
+      currentUser.value = user;
 
       final session = response.session;
       if (session != null) {
@@ -180,6 +197,108 @@ class AuthController extends GetxController {
         backgroundColor: Colors.green,
         colorText: Colors.white,
       );
+    } on AuthException catch (e) {
+      errorMessage.value = e.message;
+    } catch (_) {
+      errorMessage.value = 'Terjadi kesalahan. Coba lagi.';
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  /// Ubah password user yang sedang aktif.
+  ///
+  /// Mode penggunaan:
+  /// - **Ganti password** (`isRecovery=false`): wajib isi [currentPassword],
+  ///   akan diverifikasi via re-login. Dipanggil dari Settings.
+  /// - **Recovery** (`isRecovery=true`): tidak perlu [currentPassword].
+  ///   Session sudah diset via deep link dari email. Setelah sukses, user
+  ///   di-logout & diarahkan ke login.
+  Future<void> updatePassword({
+    String? currentPassword,
+    required String newPassword,
+    bool isRecovery = false,
+  }) async {
+    isLoading.value = true;
+    errorMessage.value = '';
+    try {
+      // Untuk mode ganti password biasa, verifikasi password lama dulu
+      if (!isRecovery) {
+        if (currentPassword == null || currentPassword.isEmpty) {
+          errorMessage.value = 'Password saat ini wajib diisi';
+          return;
+        }
+        final email =
+            SupabaseService.client.auth.currentUser?.email ?? '';
+        if (email.isEmpty) {
+          errorMessage.value = 'Sesi tidak valid. Silakan login ulang.';
+          return;
+        }
+        try {
+          await SupabaseService.client.auth.signInWithPassword(
+            email: email,
+            password: currentPassword,
+          );
+        } on AuthException catch (_) {
+          errorMessage.value = 'Password saat ini salah';
+          return;
+        }
+        if (currentPassword == newPassword) {
+          errorMessage.value =
+              'Password baru harus berbeda dengan password saat ini';
+          return;
+        }
+      }
+
+      await SupabaseService.client.auth.updateUser(
+        UserAttributes(password: newPassword),
+      );
+      currentPasswordController.clear();
+      newPasswordController.clear();
+      confirmNewPasswordController.clear();
+
+      // Tampilkan dialog sukses — wajib di-tap OK biar user yakin berhasil
+      await Get.dialog(
+        AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: const [
+              Icon(Icons.check_circle_rounded,
+                  color: Color(0xFF059669), size: 28),
+              SizedBox(width: 12),
+              Text('Berhasil'),
+            ],
+          ),
+          content: Text(
+            isRecovery
+                ? 'Password Anda berhasil diperbarui. Silakan login kembali menggunakan password baru.'
+                : 'Password Anda berhasil diperbarui. Gunakan password baru saat login berikutnya.',
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Get.back(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF059669),
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+        barrierDismissible: false,
+      );
+
+      if (isRecovery) {
+        // Setelah recovery, paksa logout & login ulang dengan password baru
+        await SupabaseService.client.auth.signOut();
+        await SecureStorage.clearAll();
+        await LocalStorage.clearUserData();
+        currentUser.value = null;
+        Get.offAllNamed(AppRoutes.login);
+      } else {
+        Get.back();
+      }
     } on AuthException catch (e) {
       errorMessage.value = e.message;
     } catch (_) {

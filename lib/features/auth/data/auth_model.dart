@@ -6,6 +6,7 @@ class UserModel {
   final String role;
   final String? avatar;
   final String? phone;
+  final bool isActive;
   final DateTime? createdAt;
 
   UserModel({
@@ -16,6 +17,7 @@ class UserModel {
     required this.role,
     this.avatar,
     this.phone,
+    this.isActive = true,
     this.createdAt,
   });
 
@@ -29,6 +31,8 @@ class UserModel {
       // Supabase menyimpan kolom sebagai avatar_url
       avatar: json['avatar_url'] ?? json['avatar'],
       phone: json['phone'],
+      // Default true agar backward compatible jika kolom belum ada
+      isActive: json['is_active'] ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.tryParse(json['created_at'].toString())
           : null,
@@ -42,7 +46,9 @@ class UserModel {
     'username': username,
     'role': role,
     'avatar': avatar,
+    'avatar_url': avatar,
     'phone': phone,
+    'is_active': isActive,
     'created_at': createdAt?.toIso8601String(),
   };
 
@@ -55,6 +61,7 @@ class UserModel {
     String? email,
     String? avatar,
     String? phone,
+    bool? isActive,
   }) => UserModel(
     id: id,
     name: name ?? this.name,
@@ -63,6 +70,7 @@ class UserModel {
     role: role,
     avatar: avatar ?? this.avatar,
     phone: phone ?? this.phone,
+    isActive: isActive ?? this.isActive,
     createdAt: createdAt,
   );
 }

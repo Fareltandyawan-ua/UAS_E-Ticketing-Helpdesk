@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/network/supabase_service.dart';
 import '../data/ticket_api.dart';
@@ -30,6 +31,7 @@ class TicketController extends GetxController {
   final RxBool isLoadingHelpdeskUsers = false.obs;
   final RxBool isAssigning = false.obs;
   final RxBool isUpdatingStatus = false.obs;
+  final RxBool isDeleting = false.obs;
 
   // History
   final RxList<TicketModel> historyList = <TicketModel>[].obs;
@@ -81,9 +83,10 @@ class TicketController extends GetxController {
             final updatedId = payload.newRecord['id']?.toString();
             if (updatedId == null) return;
 
-            // Update selectedTicket jika sedang dibuka
+            // Update selectedTicket jika sedang dibuka.
+            // Preserve komentar yang sudah tampil agar tidak flicker/hilang sesaat.
             if (selectedTicket.value?.id == updatedId) {
-              loadTicketDetail(updatedId);
+              loadTicketDetail(updatedId, preserveComments: true);
             }
 
             // Update item di ticket list secara lokal (status, assigned_to)
@@ -91,6 +94,24 @@ class TicketController extends GetxController {
             if (idx >= 0) {
               // Refresh untuk mendapatkan data terbaru dengan relasi
               refreshTickets();
+            }
+          },
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.delete,
+          schema: 'public',
+          table: 'tickets',
+          callback: (payload) {
+            final deletedId = payload.oldRecord['id']?.toString();
+            if (deletedId == null) return;
+
+            // Pastikan tiket yang dihapus ikut hilang dari semua list aktif.
+            tickets.removeWhere((t) => t.id == deletedId);
+            historyList.removeWhere((t) => t.id == deletedId);
+
+            if (selectedTicket.value?.id == deletedId) {
+              selectedTicket.value = null;
+              trackingList.clear();
             }
           },
         )
@@ -141,12 +162,41 @@ class TicketController extends GetxController {
   }
 
   // ── Detail ─────────────────────────────────────────────────────────────────
-  Future<void> loadTicketDetail(String id) async {
+  Future<void> loadTicketDetail(String id, {bool preserveComments = false}) async {
     isLoadingDetail.value = true;
     try {
-      selectedTicket.value = await _api.getTicketDetail(id);
+      final previousComments = preserveComments && selectedTicket.value?.id == id
+          ? selectedTicket.value!.comments
+          : const <CommentModel>[];
+      final detail = await _api.getTicketDetail(id);
+
+      if (previousComments.isNotEmpty && detail.comments.length < previousComments.length) {
+        selectedTicket.value = TicketModel(
+          id: detail.id,
+          title: detail.title,
+          description: detail.description,
+          status: detail.status,
+          priority: detail.priority,
+          category: detail.category,
+          createdBy: detail.createdBy,
+          assignedTo: detail.assignedTo,
+          attachments: detail.attachments,
+          comments: previousComments,
+          createdAt: detail.createdAt,
+          updatedAt: detail.updatedAt,
+        );
+      } else {
+        selectedTicket.value = detail;
+      }
+
       trackingList.assignAll(await _api.getTracking(id));
     } catch (e) {
+      // Jika tiket sudah dihapus di perangkat/user lain, bersihkan state lokal.
+      tickets.removeWhere((t) => t.id == id);
+      if (selectedTicket.value?.id == id) {
+        selectedTicket.value = null;
+        trackingList.clear();
+      }
       Get.snackbar('Error', e.toString(),
           snackPosition: SnackPosition.BOTTOM);
     } finally {
@@ -160,7 +210,7 @@ class TicketController extends GetxController {
     required String desc,
     required String priority,
     required String category,
-    List<dynamic>? attachments,
+    List<XFile>? attachments,
   }) async {
     try {
       await _api.createTicket(
@@ -168,7 +218,7 @@ class TicketController extends GetxController {
         description: desc,
         priority: priority,
         category: category,
-        attachments: attachments?.cast(),
+        attachments: attachments,
       );
       Get.back();
       await refreshTickets();
@@ -189,7 +239,29 @@ class TicketController extends GetxController {
     isUpdatingStatus.value = true;
     try {
       final updated = await _api.updateTicketStatus(ticketId, newStatus);
-      selectedTicket.value = updated;
+
+      // Response update status biasanya tidak membawa komentar lengkap.
+      // Jadi komentar yang sedang tampil harus dipertahankan agar tidak hilang sesaat.
+      if (selectedTicket.value?.id == ticketId) {
+        final current = selectedTicket.value!;
+        selectedTicket.value = TicketModel(
+          id: updated.id,
+          title: updated.title,
+          description: updated.description,
+          status: updated.status,
+          priority: updated.priority,
+          category: updated.category,
+          createdBy: updated.createdBy,
+          assignedTo: updated.assignedTo,
+          attachments: updated.attachments,
+          comments: current.comments,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        );
+      } else {
+        selectedTicket.value = updated;
+      }
+
       final idx = tickets.indexWhere((t) => t.id == ticketId);
       if (idx >= 0) tickets[idx] = updated;
       trackingList.assignAll(await _api.getTracking(ticketId));
@@ -235,6 +307,32 @@ class TicketController extends GetxController {
           snackPosition: SnackPosition.BOTTOM);
     } finally {
       isAssigning.value = false;
+    }
+  }
+
+  // ── Delete ticket ──────────────────────────────────────────────────────────
+  /// Hapus tiket dan refresh list. Tutup detail screen jika sedang dibuka.
+  Future<bool> deleteTicket(String ticketId) async {
+    isDeleting.value = true;
+    try {
+      await _api.deleteTicket(ticketId);
+      tickets.removeWhere((t) => t.id == ticketId);
+      if (selectedTicket.value?.id == ticketId) {
+        selectedTicket.value = null;
+      }
+      Get.snackbar('Berhasil', 'Tiket berhasil dihapus',
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.green,
+          colorText: Colors.white);
+      return true;
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white);
+      return false;
+    } finally {
+      isDeleting.value = false;
     }
   }
 

@@ -35,10 +35,10 @@ class AppStrings {
   static const String assignTo = 'Assign ke';
   static const String updateStatus = 'Update Status';
 
-  // Status Labels
+  // Status Labels (sesuai SRS)
   static const String statusOpen = 'Dibuka';
+  static const String statusAssigned = 'Ditugaskan';
   static const String statusInProgress = 'Diproses';
-  static const String statusResolved = 'Selesai';
   static const String statusClosed = 'Ditutup';
 
   // Priority Labels
@@ -51,8 +51,9 @@ class AppStrings {
   static const String dashboard = 'Dashboard';
   static const String totalTickets = 'Total Tiket';
   static const String openTickets = 'Tiket Dibuka';
+  static const String assignedTickets = 'Tiket Ditugaskan';
   static const String inProgressTickets = 'Sedang Diproses';
-  static const String resolvedTickets = 'Selesai';
+  static const String closedTickets = 'Ditutup';
 
   // Notification
   static const String notifications = 'Notifikasi';

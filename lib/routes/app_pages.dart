@@ -3,6 +3,7 @@ import '../features/auth/presentation/auth_controller.dart';
 import '../features/auth/presentation/login_screen.dart';
 import '../features/auth/presentation/register_screen.dart';
 import '../features/auth/presentation/forgot_password_screen.dart';
+import '../features/auth/presentation/reset_password_screen.dart';
 import '../features/dashboard/presentation/dashboard_controller.dart';
 import '../features/ticket/presentation/ticket_controller.dart';
 import '../features/ticket/presentation/ticket_detail_screen.dart';
@@ -10,8 +11,10 @@ import '../features/ticket/presentation/create_ticket_screen.dart';
 import '../features/notification/notification_controller.dart';
 import '../features/notification/notification_screen.dart';
 import '../features/tracking/tracking_screen.dart';
+import '../features/history/history_screen.dart';
 import '../features/profile/profile_screen.dart';
 import '../features/profile/edit_profile_screen.dart';
+import '../features/profile/setting_screen.dart';
 import '../features/admin/presentation/admin_controller.dart';
 import '../features/admin/presentation/admin_screen.dart';
 import 'app_routes.dart';
@@ -36,35 +39,76 @@ class AppPages {
       name: AppRoutes.main,
       page: () => const MainScreen(),
       binding: BindingsBuilder(() {
-        Get.lazyPut<DashboardController>(() => DashboardController());
-        Get.lazyPut<TicketController>(() => TicketController());
-        Get.lazyPut<NotificationController>(() => NotificationController());
+        Get.lazyPut<DashboardController>(() => DashboardController(),
+            fenix: true);
+        Get.lazyPut<TicketController>(() => TicketController(), fenix: true);
+        Get.lazyPut<NotificationController>(() => NotificationController(),
+            fenix: true);
         // AdminController hanya diinisialisasi jika user adalah admin
         final authCtrl = Get.find<AuthController>();
         if (authCtrl.isAdmin) {
-          Get.lazyPut<AdminController>(() => AdminController());
+          Get.lazyPut<AdminController>(() => AdminController(), fenix: true);
         }
       }),
     ),
     GetPage(
       name: AppRoutes.ticketDetail,
       page: () => const TicketDetailScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<TicketController>()) {
+          Get.lazyPut<TicketController>(() => TicketController(), fenix: true);
+        }
+      }),
     ),
     GetPage(
       name: AppRoutes.createTicket,
       page: () => CreateTicketScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<TicketController>()) {
+          Get.lazyPut<TicketController>(() => TicketController(), fenix: true);
+        }
+      }),
     ),
     GetPage(
       name: AppRoutes.notifications,
       page: () => const NotificationScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<NotificationController>()) {
+          Get.lazyPut<NotificationController>(() => NotificationController(),
+              fenix: true);
+        }
+      }),
     ),
     GetPage(
       name: AppRoutes.tracking,
       page: () => const TrackingScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<TicketController>()) {
+          Get.lazyPut<TicketController>(() => TicketController(), fenix: true);
+        }
+      }),
     ),
-    GetPage(name: AppRoutes.history, page: () => const HistoryScreen()),
+    GetPage(
+      name: AppRoutes.history,
+      page: () => const HistoryScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<TicketController>()) {
+          Get.lazyPut<TicketController>(() => TicketController(), fenix: true);
+        }
+      }),
+    ),
     GetPage(name: AppRoutes.profile, page: () => const ProfileScreen()),
     GetPage(name: AppRoutes.editProfile, page: () => EditProfileScreen()),
+    GetPage(name: AppRoutes.settings, page: () => const SettingScreen()),
+    GetPage(
+      name: AppRoutes.resetPassword,
+      page: () => const ResetPasswordScreen(),
+      binding: BindingsBuilder(() {
+        if (!Get.isRegistered<AuthController>()) {
+          Get.lazyPut<AuthController>(() => AuthController());
+        }
+      }),
+    ),
     GetPage(
       name: AppRoutes.admin,
       page: () => const AdminScreen(),

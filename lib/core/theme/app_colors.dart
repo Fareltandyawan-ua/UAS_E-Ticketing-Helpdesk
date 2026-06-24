@@ -24,15 +24,15 @@ class AppColors {
   static const Color info = Color(0xFF0891B2);
   static const Color infoLight = Color(0xFFCFFAFE);
 
-  // Ticket Status
+  // Ticket Status (sesuai SRS: Open → Assigned → In Progress → Closed)
   static const Color statusOpen = Color(0xFF2563EB);
   static const Color statusOpenBg = Color(0xFFDBEAFE);
+  static const Color statusAssigned = Color(0xFF7C3AED);
+  static const Color statusAssignedBg = Color(0xFFEDE9FE);
   static const Color statusInProgress = Color(0xFFD97706);
   static const Color statusInProgressBg = Color(0xFFFEF3C7);
-  static const Color statusResolved = Color(0xFF059669);
-  static const Color statusResolvedBg = Color(0xFFD1FAE5);
-  static const Color statusClosed = Color(0xFF6B7280);
-  static const Color statusClosedBg = Color(0xFFF3F4F6);
+  static const Color statusClosed = Color(0xFF059669);
+  static const Color statusClosedBg = Color(0xFFD1FAE5);
 
   // Light Theme
   static const Color backgroundLight = Color(0xFFF8FAFC);

@@ -176,17 +176,22 @@ class StatusBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final config = _getConfig(status);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: config['bg'] as Color,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        config['label'] as String,
-        style: AppTextStyles.labelSmall.copyWith(
-          color: config['color'] as Color,
-          fontWeight: FontWeight.w600,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 120),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: config['bg'] as Color,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          config['label'] as String,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: AppTextStyles.labelSmall.copyWith(
+            color: config['color'] as Color,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
     );
@@ -200,17 +205,17 @@ class StatusBadge extends StatelessWidget {
           'color': AppColors.statusOpen,
           'bg': AppColors.statusOpenBg,
         };
+      case 'assigned':
+        return {
+          'label': 'Ditugaskan',
+          'color': AppColors.statusAssigned,
+          'bg': AppColors.statusAssignedBg,
+        };
       case 'in_progress':
         return {
           'label': 'Diproses',
           'color': AppColors.statusInProgress,
           'bg': AppColors.statusInProgressBg,
-        };
-      case 'resolved':
-        return {
-          'label': 'Selesai',
-          'color': AppColors.statusResolved,
-          'bg': AppColors.statusResolvedBg,
         };
       case 'closed':
         return {
@@ -239,18 +244,25 @@ class PriorityBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final config = _getConfig(priority);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.flag_rounded, size: 14, color: config['color'] as Color),
-        const SizedBox(width: 4),
-        Text(
-          config['label'] as String,
-          style: AppTextStyles.labelSmall.copyWith(
-            color: config['color'] as Color,
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 96),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.flag_rounded, size: 14, color: config['color'] as Color),
+          const SizedBox(width: 4),
+          Flexible(
+            child: Text(
+              config['label'] as String,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.labelSmall.copyWith(
+                color: config['color'] as Color,
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

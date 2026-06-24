@@ -100,6 +100,7 @@ class _UserTicketView extends StatelessWidget {
   void _showFilterSheet(BuildContext context, TicketController ctrl) {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
@@ -150,6 +151,7 @@ class _HelpdeskTicketViewState extends State<_HelpdeskTicketView>
             icon: const Icon(Icons.filter_list_rounded),
             onPressed: () => showModalBottomSheet(
               context: context,
+              isScrollControlled: true,
               shape: const RoundedRectangleBorder(
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
               ),
@@ -159,6 +161,7 @@ class _HelpdeskTicketViewState extends State<_HelpdeskTicketView>
         ],
         bottom: TabBar(
           controller: _tabCtrl,
+          isScrollable: true,
           tabs: const [
             Tab(text: 'Semua'),
             Tab(text: 'Ditugaskan'),
@@ -323,7 +326,10 @@ class _FilterChips extends StatelessWidget {
       if (!hasFilter) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Row(
+        child: Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const Text(
               'Filter: ',
@@ -389,55 +395,59 @@ class _FilterSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Filter Tiket', style: AppTextStyles.titleLarge),
-          const SizedBox(height: 20),
-          Text('Status', style: AppTextStyles.labelMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: ['', 'open', 'in_progress', 'resolved', 'closed']
-                .map(
-                  (s) => Obx(
-                    () => ChoiceChip(
-                      label: Text(s.isEmpty ? 'Semua' : s),
-                      selected: ctrl.filterStatus.value == s,
-                      onSelected: (_) {
-                        ctrl.setFilter(status: s);
-                        Navigator.pop(context);
-                      },
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Filter Tiket', style: AppTextStyles.titleLarge),
+            const SizedBox(height: 20),
+            Text('Status', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['', 'open', 'assigned', 'in_progress', 'closed']
+                  .map(
+                    (s) => Obx(
+                      () => ChoiceChip(
+                        label: Text(s.isEmpty ? 'Semua' : s),
+                        selected: ctrl.filterStatus.value == s,
+                        onSelected: (_) {
+                          ctrl.setFilter(status: s);
+                          Navigator.pop(context);
+                        },
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-          Text('Prioritas', style: AppTextStyles.labelMedium),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: ['', 'low', 'medium', 'high', 'critical']
-                .map(
-                  (p) => Obx(
-                    () => ChoiceChip(
-                      label: Text(p.isEmpty ? 'Semua' : p),
-                      selected: ctrl.filterPriority.value == p,
-                      onSelected: (_) {
-                        ctrl.setFilter(priority: p);
-                        Navigator.pop(context);
-                      },
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 16),
+            Text('Prioritas', style: AppTextStyles.labelMedium),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: ['', 'low', 'medium', 'high', 'critical']
+                  .map(
+                    (p) => Obx(
+                      () => ChoiceChip(
+                        label: Text(p.isEmpty ? 'Semua' : p),
+                        selected: ctrl.filterPriority.value == p,
+                        onSelected: (_) {
+                          ctrl.setFilter(priority: p);
+                          Navigator.pop(context);
+                        },
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-        ],
+                  )
+                  .toList(),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
       ),
     );
   }
@@ -522,12 +532,16 @@ class TicketCard extends StatelessWidget {
                     color: AppColors.grey400,
                   ),
                   const SizedBox(width: 4),
-                  Text(
-                    ticket.assignedTo?.name ?? 'Belum di-assign',
-                    style: AppTextStyles.labelSmall.copyWith(
-                      color: ticket.assignedTo == null
-                          ? AppColors.warning
-                          : AppColors.grey500,
+                  Expanded(
+                    child: Text(
+                      ticket.assignedTo?.name ?? 'Belum di-assign',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: ticket.assignedTo == null
+                            ? AppColors.warning
+                            : AppColors.grey500,
+                      ),
                     ),
                   ),
                 ],
@@ -535,41 +549,50 @@ class TicketCard extends StatelessWidget {
             ],
 
             const SizedBox(height: 10),
-            Row(
+            Wrap(
+              spacing: 10,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 PriorityBadge(priority: ticket.priority),
-                const Spacer(),
-                const Icon(
-                  Icons.access_time_rounded,
-                  size: 13,
-                  color: AppColors.grey400,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  DateFormatter.timeAgo(ticket.createdAt),
-                  style: AppTextStyles.labelSmall.copyWith(
-                    color: AppColors.grey400,
-                  ),
-                ),
-                if (ticket.comments.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  const Icon(
-                    Icons.chat_bubble_outline_rounded,
-                    size: 13,
-                    color: AppColors.grey400,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    '${ticket.comments.length}',
-                    style: AppTextStyles.labelSmall.copyWith(
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.access_time_rounded,
+                      size: 13,
                       color: AppColors.grey400,
                     ),
+                    const SizedBox(width: 4),
+                    Text(
+                      DateFormatter.timeAgo(ticket.createdAt),
+                      style: AppTextStyles.labelSmall.copyWith(
+                        color: AppColors.grey400,
+                      ),
+                    ),
+                  ],
+                ),
+                if (ticket.comments.isNotEmpty)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.chat_bubble_outline_rounded,
+                        size: 13,
+                        color: AppColors.grey400,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        '${ticket.comments.length}',
+                        style: AppTextStyles.labelSmall.copyWith(
+                          color: AppColors.grey400,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
 
                 // Tombol "Ambil Tiket" — self assign
-                if (showSelfAssign && selfAssignUserId != null) ...[
-                  const SizedBox(width: 8),
+                if (showSelfAssign && selfAssignUserId != null)
                   GestureDetector(
                     onTap: () {
                       final ticketCtrl = Get.find<TicketController>();
@@ -594,7 +617,6 @@ class TicketCard extends StatelessWidget {
                       ),
                     ),
                   ),
-                ],
               ],
             ),
           ],

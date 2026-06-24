@@ -47,7 +47,8 @@ dependencies:
   realtime_client: ^2.7.3
 
   # Notifikasi
-  # firebase_messaging: ^14.7.0 # atau supabase_flutter
+  flutter_local_notifications: ^17.2.3
+  # firebase_messaging: ^15.1.0  # akan diaktifkan di fase FCM
 
   # Chart dashboard
   fl_chart: ^0.67.0

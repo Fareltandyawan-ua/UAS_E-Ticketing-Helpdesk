@@ -119,19 +119,19 @@ class DashboardScreen extends StatelessWidget {
                                 onTap: () => _goToTickets(),
                               ),
                               _StatCard(
+                                label: 'Ditugaskan',
+                                value: s.assigned,
+                                color: AppColors.statusAssigned,
+                                bgColor: AppColors.statusAssignedBg,
+                                icon: Icons.assignment_turned_in_outlined,
+                                onTap: () => _goToTickets(),
+                              ),
+                              _StatCard(
                                 label: 'Diproses',
                                 value: s.inProgress,
                                 color: AppColors.statusInProgress,
                                 bgColor: AppColors.statusInProgressBg,
                                 icon: Icons.sync_outlined,
-                                onTap: () => _goToTickets(),
-                              ),
-                              _StatCard(
-                                label: 'Selesai',
-                                value: s.resolved,
-                                color: AppColors.statusResolved,
-                                bgColor: AppColors.statusResolvedBg,
-                                icon: Icons.check_circle_outline,
                                 onTap: () => _goToTickets(),
                               ),
                               _StatCard(
@@ -154,32 +154,46 @@ class DashboardScreen extends StatelessWidget {
                             final s = dashCtrl.stats.value;
                             return Column(
                               children: [
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _StatCard(
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final isNarrow = constraints.maxWidth < 420;
+                                    final cards = [
+                                      _StatCard(
                                         label: 'Ditugaskan ke Saya',
                                         value: s.assignedToMe,
                                         color: AppColors.primary,
                                         bgColor: AppColors.primaryContainer,
                                         icon: Icons.assignment_ind_outlined,
-                                        onTap: () =>
-                                            _goToTickets(),
+                                        onTap: () => _goToTickets(),
                                       ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _StatCard(
+                                      _StatCard(
                                         label: 'Belum Ditugaskan',
                                         value: s.unassigned,
                                         color: AppColors.warning,
                                         bgColor: const Color(0xFFFFF8E1),
                                         icon: Icons.person_search_outlined,
-                                        onTap: () =>
-                                            _goToTickets(),
+                                        onTap: () => _goToTickets(),
                                       ),
-                                    ),
-                                  ],
+                                    ];
+
+                                    if (isNarrow) {
+                                      return Column(
+                                        children: [
+                                          cards[0],
+                                          const SizedBox(height: 12),
+                                          cards[1],
+                                        ],
+                                      );
+                                    }
+
+                                    return Row(
+                                      children: [
+                                        Expanded(child: cards[0]),
+                                        const SizedBox(width: 12),
+                                        Expanded(child: cards[1]),
+                                      ],
+                                    );
+                                  },
                                 ),
                                 const SizedBox(height: 16),
                               ],
@@ -199,49 +213,51 @@ class DashboardScreen extends StatelessWidget {
                     const SizedBox(height: 12),
                     Obx(() {
                       final isHelpdesk = authCtrl.isHelpdesk;
-                      return Row(
-                        children: [
-                          if (!isHelpdesk) ...[
-                            Expanded(
-                              child: _QuickAction(
-                                label: 'Buat Tiket',
-                                icon: Icons.add_circle_outline,
-                                color: AppColors.primary,
-                                onTap: () =>
-                                    Get.toNamed(AppRoutes.createTicket),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                          ],
-                          Expanded(
-                            child: _QuickAction(
-                              label: isHelpdesk ? 'Kelola Tiket' : 'Tiket Saya',
-                              icon: Icons.confirmation_number_outlined,
-                              color: AppColors.secondary,
-                              onTap: () => _goToTickets(),
-                            ),
+                      final actions = <Widget>[
+                        if (!isHelpdesk)
+                          _QuickAction(
+                            label: 'Buat Tiket',
+                            icon: Icons.add_circle_outline,
+                            color: AppColors.primary,
+                            onTap: () => Get.toNamed(AppRoutes.createTicket),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _QuickAction(
-                              label: 'Riwayat',
-                              icon: Icons.history_rounded,
-                              color: AppColors.info,
-                              onTap: () => Get.toNamed(AppRoutes.history),
-                            ),
+                        _QuickAction(
+                          label: isHelpdesk ? 'Kelola Tiket' : 'Tiket Saya',
+                          icon: Icons.confirmation_number_outlined,
+                          color: AppColors.secondary,
+                          onTap: () => _goToTickets(),
+                        ),
+                        _QuickAction(
+                          label: 'Riwayat',
+                          icon: Icons.history_rounded,
+                          color: AppColors.info,
+                          onTap: () => Get.toNamed(AppRoutes.history),
+                        ),
+                        if (authCtrl.isAdmin)
+                          _QuickAction(
+                            label: 'Manajemen\nUser',
+                            icon: Icons.manage_accounts_outlined,
+                            color: const Color(0xFF7B1FA2),
+                            onTap: () => Get.toNamed(AppRoutes.admin),
                           ),
-                          if (authCtrl.isAdmin) ...[
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: _QuickAction(
-                                label: 'Manajemen\nUser',
-                                icon: Icons.manage_accounts_outlined,
-                                color: const Color(0xFF7B1FA2),
-                                onTap: () => Get.toNamed(AppRoutes.admin),
-                              ),
-                            ),
-                          ],
-                        ],
+                      ];
+
+                      return LayoutBuilder(
+                        builder: (context, constraints) {
+                          final itemWidth = constraints.maxWidth < 420
+                              ? (constraints.maxWidth - 12) / 2
+                              : (constraints.maxWidth - 24) / 3;
+                          return Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: actions
+                                .map((action) => SizedBox(
+                                      width: itemWidth.clamp(120, 220).toDouble(),
+                                      child: action,
+                                    ))
+                                .toList(),
+                          );
+                        },
                       );
                     }),
                     const SizedBox(height: 24),
@@ -384,17 +400,26 @@ class _StatCard extends StatelessWidget {
               child: Icon(icon, color: color, size: 20),
             ),
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('$value',
-                    style: AppTextStyles.headingSmall
-                        .copyWith(color: color)),
-                Text(label,
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '$value',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.headingSmall.copyWith(color: color),
+                  ),
+                  Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.labelSmall
-                        .copyWith(color: AppColors.grey500)),
-              ],
+                        .copyWith(color: AppColors.grey500),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -438,9 +463,9 @@ class _PieChartCard extends StatelessWidget {
                         color: Colors.white),
                   ),
                   PieChartSectionData(
-                    value: stats.inProgress.toDouble(),
-                    color: AppColors.statusInProgress,
-                    title: '${stats.inProgress}',
+                    value: stats.assigned.toDouble(),
+                    color: AppColors.statusAssigned,
+                    title: '${stats.assigned}',
                     radius: 60,
                     titleStyle: const TextStyle(
                         fontSize: 13,
@@ -448,9 +473,9 @@ class _PieChartCard extends StatelessWidget {
                         color: Colors.white),
                   ),
                   PieChartSectionData(
-                    value: stats.resolved.toDouble(),
-                    color: AppColors.statusResolved,
-                    title: '${stats.resolved}',
+                    value: stats.inProgress.toDouble(),
+                    color: AppColors.statusInProgress,
+                    title: '${stats.inProgress}',
                     radius: 60,
                     titleStyle: const TextStyle(
                         fontSize: 13,
@@ -480,8 +505,9 @@ class _PieChartCard extends StatelessWidget {
             children: [
               _Legend(color: AppColors.statusOpen, label: 'Dibuka'),
               _Legend(
+                  color: AppColors.statusAssigned, label: 'Ditugaskan'),
+              _Legend(
                   color: AppColors.statusInProgress, label: 'Diproses'),
-              _Legend(color: AppColors.statusResolved, label: 'Selesai'),
               _Legend(color: AppColors.statusClosed, label: 'Ditutup'),
             ],
           ),
@@ -541,9 +567,13 @@ class _QuickAction extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 26),
             const SizedBox(height: 6),
-            Text(label,
-                style: AppTextStyles.labelSmall.copyWith(color: color),
-                textAlign: TextAlign.center),
+            Text(
+              label,
+              style: AppTextStyles.labelSmall.copyWith(color: color),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
       ),

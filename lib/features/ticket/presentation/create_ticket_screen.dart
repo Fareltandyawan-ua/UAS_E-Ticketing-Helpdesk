@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -64,7 +63,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
         maxWidth: 1920,
       );
       if (picked != null) {
-        final bytes = kIsWeb ? await picked.readAsBytes() : null;
+        final bytes = await picked.readAsBytes();
         setState(() {
           _xFiles.add(picked);
           _previewBytes.add(bytes);
@@ -82,7 +81,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
       final picked = await picker.pickMultiImage(imageQuality: 80);
       if (picked.isNotEmpty) {
         for (final f in picked) {
-          final bytes = kIsWeb ? await f.readAsBytes() : null;
+          final bytes = await f.readAsBytes();
           setState(() {
             _xFiles.add(f);
             _previewBytes.add(bytes);
@@ -161,12 +160,7 @@ class _CreateTicketScreenState extends State<CreateTicketScreen> {
     setState(() => _loading = true);
     try {
       final ctrl = Get.find<TicketController>();
-      // Konversi XFile ke File hanya jika bukan web
-      final attachments = kIsWeb
-          ? null
-          : _xFiles.isEmpty
-              ? null
-              : _xFiles.map((x) => File(x.path)).toList();
+      final attachments = _xFiles.isEmpty ? null : List<XFile>.from(_xFiles);
       await ctrl.createTicketDirect(
         title: _titleCtrl.text.trim(),
         desc: _descCtrl.text.trim(),
@@ -414,19 +408,10 @@ class _AttachmentThumb extends StatelessWidget {
   Widget build(BuildContext context) {
     Widget imageWidget;
 
-    if (kIsWeb && previewBytes != null) {
-      // Web: gunakan Image.memory dengan bytes
+    if (previewBytes != null) {
+      // Cross-platform preview: web/mobile/desktop menggunakan bytes dari XFile.
       imageWidget = Image.memory(
         previewBytes!,
-        width: 80,
-        height: 80,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _placeholder(),
-      );
-    } else if (!kIsWeb) {
-      // Mobile/Desktop: gunakan Image.file
-      imageWidget = Image.file(
-        File(xFile.path),
         width: 80,
         height: 80,
         fit: BoxFit.cover,

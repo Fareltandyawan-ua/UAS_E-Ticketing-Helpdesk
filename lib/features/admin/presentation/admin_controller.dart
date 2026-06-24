@@ -69,4 +69,30 @@ class AdminController extends GetxController {
       isUpdating.value = false;
     }
   }
+
+  /// Aktifkan atau nonaktifkan akun pengguna
+  Future<void> toggleActive(String userId, bool isActive) async {
+    isUpdating.value = true;
+    try {
+      final updated = await _api.setUserActive(userId, isActive);
+      final idx = users.indexWhere((u) => u.id == userId);
+      if (idx >= 0) users[idx] = updated;
+      Get.snackbar(
+        'Berhasil',
+        isActive ? 'Akun pengguna diaktifkan' : 'Akun pengguna dinonaktifkan',
+        snackPosition: SnackPosition.BOTTOM,
+        backgroundColor: isActive ? Colors.green : Colors.orange,
+        colorText: Colors.white,
+      );
+      final stats = await _api.getUserStats();
+      userStats.assignAll(stats);
+    } catch (e) {
+      Get.snackbar('Error', e.toString(),
+          snackPosition: SnackPosition.BOTTOM,
+          backgroundColor: Colors.red,
+          colorText: Colors.white);
+    } finally {
+      isUpdating.value = false;
+    }
+  }
 }
