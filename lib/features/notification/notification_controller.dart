@@ -10,7 +10,13 @@ class NotificationController extends GetxController {
 
   final RxList<NotificationModel> notifications = <NotificationModel>[].obs;
   final RxBool isLoading = false.obs;
+  final RxBool isLoadingMore = false.obs;
   final RxInt unreadCount = 0.obs;
+
+  // Pagination (NFR 4.1: lazy loading list)
+  static const int _pageSize = 20;
+  int _page = 1;
+  bool _hasMore = true;
 
   // Realtime
   RealtimeChannel? _channel;
@@ -33,10 +39,14 @@ class NotificationController extends GetxController {
   }
 
   // ── Polling setiap 20 detik ──────────────────────────────────────────────
+  // Hanya refresh kalau user belum scroll ke page berikutnya, agar tidak
+  // mengganggu scroll position user yang sedang melihat notifikasi lama.
   void _startPolling() {
     _pollingTimer = Timer.periodic(
       const Duration(seconds: 20),
-      (_) => fetchNotifications(),
+      (_) {
+        if (_page == 1) fetchNotifications();
+      },
     );
   }
 
@@ -114,30 +124,61 @@ class NotificationController extends GetxController {
   }
 
   // ── Fetch ────────────────────────────────────────────────────────────────
-  Future<void> fetchNotifications() async {
-    // Jangan tampilkan loading spinner saat background polling
-    final showLoading = notifications.isEmpty;
-    if (showLoading) isLoading.value = true;
+  /// Ambil notifikasi. Jika [loadMore] = true, tambahkan halaman berikutnya
+  /// ke list (lazy load). Jika false, reset ke halaman 1.
+  Future<void> fetchNotifications({bool loadMore = false}) async {
+    if (loadMore) {
+      if (!_hasMore || isLoadingMore.value) return;
+      isLoadingMore.value = true;
+      _page++;
+    } else {
+      // Reset pagination saat refresh / fetch pertama
+      _page = 1;
+      _hasMore = true;
+      // Jangan tampilkan loading spinner saat background polling
+      final showLoading = notifications.isEmpty;
+      if (showLoading) isLoading.value = true;
+    }
 
     try {
       final userId = _db.auth.currentUser?.id;
       if (userId == null) return;
+
+      final from = (_page - 1) * _pageSize;
+      final to = _page * _pageSize - 1;
 
       final data = await _db
           .from('notifications')
           .select()
           .eq('user_id', userId)
           .order('created_at', ascending: false)
-          .limit(50);
+          .range(from, to);
 
       final fetched =
           (data as List).map((e) => NotificationModel.fromJson(e)).toList();
-      notifications.assignAll(await _filterExistingTicketNotifications(fetched));
-      unreadCount.value = notifications.where((n) => !n.isRead).length;
-    } catch (_) {}
+      final filtered = await _filterExistingTicketNotifications(fetched);
 
-    if (showLoading) isLoading.value = false;
+      if (loadMore) {
+        notifications.addAll(filtered);
+      } else {
+        notifications.assignAll(filtered);
+      }
+
+      // Kalau fetched < pageSize, berarti sudah halaman terakhir
+      if (fetched.length < _pageSize) _hasMore = false;
+
+      unreadCount.value = notifications.where((n) => !n.isRead).length;
+    } catch (_) {
+      // Rollback page increment jika error saat loadMore
+      if (loadMore) _page--;
+    }
+
+    isLoading.value = false;
+    isLoadingMore.value = false;
   }
+
+  /// Helper untuk dipanggil dari scroll listener
+  Future<void> loadMoreNotifications() => fetchNotifications(loadMore: true);
 
   Future<void> markRead(String id) async {
     try {

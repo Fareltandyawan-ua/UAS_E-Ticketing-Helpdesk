@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -5,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
     show AuthException, UserAttributes;
 import '../data/auth_model.dart';
 import '../../../core/network/supabase_service.dart';
+import '../../../core/services/activity_logger.dart';
 import '../../../core/storage/secure_storage.dart';
 import '../../../core/storage/local_storage.dart';
 import '../../../routes/app_routes.dart';
@@ -101,6 +103,13 @@ class AuthController extends GetxController {
 
       await LocalStorage.saveUserData(jsonEncode(currentUser.value!.toJson()));
       _clearLoginForm();
+
+      // Log aktivitas login (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.login,
+        description: 'Login berhasil sebagai ${currentUser.value!.role}',
+      ));
+
       Get.offAllNamed(AppRoutes.main);
     } on AuthException catch (e) {
       errorMessage.value = e.message;
@@ -154,6 +163,13 @@ class AuthController extends GetxController {
 
       await LocalStorage.saveUserData(jsonEncode(currentUser.value!.toJson()));
       _clearRegisterForm();
+
+      // Log aktivitas registrasi (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.register,
+        description: 'Akun baru dibuat: ${currentUser.value!.email}',
+      ));
+
       Get.offAllNamed(AppRoutes.main);
     } on AuthException catch (e) {
       errorMessage.value = e.message;
@@ -168,6 +184,12 @@ class AuthController extends GetxController {
     isLoading.value = true;
     errorMessage.value = '';
     try {
+      // Log dulu sebelum signOut (BR-005) supaya masih authenticated saat insert
+      await ActivityLogger.log(
+        type: ActivityType.logout,
+        description: 'Logout dari aplikasi',
+      );
+
       await SupabaseService.client.auth.signOut();
       await SecureStorage.clearAll();
       await LocalStorage.clearUserData();
@@ -256,6 +278,14 @@ class AuthController extends GetxController {
       currentPasswordController.clear();
       newPasswordController.clear();
       confirmNewPasswordController.clear();
+
+      // Log aktivitas ganti password (BR-005) — sebelum potensi logout di recovery
+      await ActivityLogger.log(
+        type: ActivityType.passwordChanged,
+        description: isRecovery
+            ? 'Password direset via email recovery'
+            : 'Password diubah dari menu Pengaturan',
+      );
 
       // Tampilkan dialog sukses — wajib di-tap OK biar user yakin berhasil
       await Get.dialog(

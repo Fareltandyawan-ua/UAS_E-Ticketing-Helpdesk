@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
+import '../../../core/services/activity_logger.dart';
 import '../data/ticket_model.dart';
 import '../data/ticket_api.dart';
 import 'ticket_controller.dart';
@@ -51,6 +53,15 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
       final api = TicketApi();
       final comment = await api.addComment(_ticketId, text);
       _commentCtrl.clear();
+
+      // Log aktivitas tambah komentar (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.commentAdded,
+        description:
+            'Menambahkan komentar pada tiket "${_ctrl.selectedTicket.value?.title ?? _ticketId}"',
+        ticketId: _ticketId,
+      ));
+
       if (_ctrl.selectedTicket.value != null) {
         final t = _ctrl.selectedTicket.value!;
         _ctrl.selectedTicket.value = TicketModel(

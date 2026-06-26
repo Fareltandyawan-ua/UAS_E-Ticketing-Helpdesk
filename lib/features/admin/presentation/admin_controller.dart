@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../../../core/services/activity_logger.dart';
 import '../data/admin_api.dart';
 import '../../auth/data/auth_model.dart';
 
@@ -49,10 +51,24 @@ class AdminController extends GetxController {
 
   Future<void> updateRole(String userId, String newRole) async {
     isUpdating.value = true;
+    final oldRole = users.firstWhereOrNull((u) => u.id == userId)?.role;
     try {
       final updated = await _api.updateUserRole(userId, newRole);
       final idx = users.indexWhere((u) => u.id == userId);
       if (idx >= 0) users[idx] = updated;
+
+      // Log aktivitas ubah role oleh admin (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.userRoleChanged,
+        description:
+            'Mengubah role ${updated.name} dari ${oldRole ?? "?"} ke $newRole',
+        metadata: {
+          'target_user_id': userId,
+          if (oldRole != null) 'old_role': oldRole,
+          'new_role': newRole,
+        },
+      ));
+
       Get.snackbar('Berhasil', 'Role user diperbarui menjadi $newRole',
           snackPosition: SnackPosition.BOTTOM,
           backgroundColor: Colors.green,
@@ -77,6 +93,18 @@ class AdminController extends GetxController {
       final updated = await _api.setUserActive(userId, isActive);
       final idx = users.indexWhere((u) => u.id == userId);
       if (idx >= 0) users[idx] = updated;
+
+      // Log aktivitas aktif/nonaktif user oleh admin (BR-005)
+      unawaited(ActivityLogger.log(
+        type: isActive
+            ? ActivityType.userActivated
+            : ActivityType.userDeactivated,
+        description: isActive
+            ? 'Mengaktifkan akun ${updated.name}'
+            : 'Menonaktifkan akun ${updated.name}',
+        metadata: {'target_user_id': userId},
+      ));
+
       Get.snackbar(
         'Berhasil',
         isActive ? 'Akun pengguna diaktifkan' : 'Akun pengguna dinonaktifkan',

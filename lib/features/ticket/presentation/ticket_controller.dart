@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/network/supabase_service.dart';
+import '../../../core/services/activity_logger.dart';
 import '../data/ticket_api.dart';
 import '../data/ticket_model.dart';
 import '../../auth/data/auth_model.dart';
@@ -213,13 +215,22 @@ class TicketController extends GetxController {
     List<XFile>? attachments,
   }) async {
     try {
-      await _api.createTicket(
+      final created = await _api.createTicket(
         title: title,
         description: desc,
         priority: priority,
         category: category,
         attachments: attachments,
       );
+
+      // Log aktivitas create ticket (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.ticketCreated,
+        description: 'Membuat tiket: $title',
+        ticketId: created.id,
+        metadata: {'priority': priority, 'category': category},
+      ));
+
       Get.back();
       await refreshTickets();
       Get.snackbar('Berhasil', 'Tiket berhasil dibuat',
@@ -237,8 +248,21 @@ class TicketController extends GetxController {
   // ── Update status ──────────────────────────────────────────────────────────
   Future<void> updateStatus(String ticketId, String newStatus) async {
     isUpdatingStatus.value = true;
+    final oldStatus = selectedTicket.value?.status ??
+        tickets.firstWhereOrNull((t) => t.id == ticketId)?.status;
     try {
       final updated = await _api.updateTicketStatus(ticketId, newStatus);
+
+      // Log aktivitas update status (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.ticketStatusChanged,
+        description: 'Status tiket "${updated.title}" diubah ke $newStatus',
+        ticketId: ticketId,
+        metadata: {
+          if (oldStatus != null) 'old_status': oldStatus,
+          'new_status': newStatus,
+        },
+      ));
 
       // Response update status biasanya tidak membawa komentar lengkap.
       // Jadi komentar yang sedang tampil harus dipertahankan agar tidak hilang sesaat.
@@ -298,6 +322,16 @@ class TicketController extends GetxController {
       selectedTicket.value = updated;
       final idx = tickets.indexWhere((t) => t.id == ticketId);
       if (idx >= 0) tickets[idx] = updated;
+
+      // Log aktivitas assign tiket (BR-005)
+      unawaited(ActivityLogger.log(
+        type: ActivityType.ticketAssigned,
+        description:
+            'Tiket "${updated.title}" di-assign ke ${updated.assignedTo?.name ?? assigneeId}',
+        ticketId: ticketId,
+        metadata: {'assignee_id': assigneeId},
+      ));
+
       Get.snackbar('Berhasil', 'Tiket berhasil di-assign',
           snackPosition: SnackPosition.BOTTOM,
           backgroundColor: Colors.green,
@@ -314,12 +348,25 @@ class TicketController extends GetxController {
   /// Hapus tiket dan refresh list. Tutup detail screen jika sedang dibuka.
   Future<bool> deleteTicket(String ticketId) async {
     isDeleting.value = true;
+    final deletedTitle = selectedTicket.value?.id == ticketId
+        ? selectedTicket.value?.title
+        : tickets.firstWhereOrNull((t) => t.id == ticketId)?.title;
     try {
       await _api.deleteTicket(ticketId);
       tickets.removeWhere((t) => t.id == ticketId);
       if (selectedTicket.value?.id == ticketId) {
         selectedTicket.value = null;
       }
+
+      // Log aktivitas hapus tiket (BR-005)
+      // NOTE: tidak pakai ticketId karena tiket sudah tidak ada (akan jadi
+      // foreign key dangling kalau bukan ON DELETE SET NULL). Simpan di metadata.
+      unawaited(ActivityLogger.log(
+        type: ActivityType.ticketDeleted,
+        description: 'Menghapus tiket: ${deletedTitle ?? ticketId}',
+        metadata: {'deleted_ticket_id': ticketId},
+      ));
+
       Get.snackbar('Berhasil', 'Tiket berhasil dihapus',
           snackPosition: SnackPosition.BOTTOM,
           backgroundColor: Colors.green,

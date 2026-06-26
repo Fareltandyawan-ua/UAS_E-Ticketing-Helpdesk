@@ -18,12 +18,14 @@ class NotificationScreen extends StatefulWidget {
 class _NotificationScreenState extends State<NotificationScreen>
     with WidgetsBindingObserver {
   late NotificationController _ctrl;
+  final ScrollController _scrollCtrl = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _ctrl = Get.find<NotificationController>();
     WidgetsBinding.instance.addObserver(this);
+    _scrollCtrl.addListener(_onScroll);
     // Refresh setiap kali screen ini pertama kali dibuka / menjadi aktif
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _ctrl.fetchNotifications();
@@ -32,8 +34,20 @@ class _NotificationScreenState extends State<NotificationScreen>
 
   @override
   void dispose() {
+    _scrollCtrl
+      ..removeListener(_onScroll)
+      ..dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
+  }
+
+  /// Trigger lazy load saat scroll mendekati bottom (sisa 200px)
+  void _onScroll() {
+    if (!_scrollCtrl.hasClients) return;
+    final position = _scrollCtrl.position;
+    if (position.pixels >= position.maxScrollExtent - 200) {
+      _ctrl.loadMoreNotifications();
+    }
   }
 
   @override
@@ -101,11 +115,34 @@ class _NotificationScreenState extends State<NotificationScreen>
         return RefreshIndicator(
           onRefresh: _ctrl.fetchNotifications,
           child: ListView.separated(
+            controller: _scrollCtrl,
             physics: const AlwaysScrollableScrollPhysics(),
-            itemCount: _ctrl.notifications.length,
-            separatorBuilder: (_, __) =>
-                const Divider(height: 1, indent: 72),
+            // +1 untuk loading indicator di akhir kalau sedang loadMore
+            itemCount: _ctrl.notifications.length +
+                (_ctrl.isLoadingMore.value ? 1 : 0),
+            separatorBuilder: (_, i) {
+              // Jangan kasih divider di atas loading indicator
+              if (i == _ctrl.notifications.length - 1 &&
+                  _ctrl.isLoadingMore.value) {
+                return const SizedBox.shrink();
+              }
+              return const Divider(height: 1, indent: 72);
+            },
             itemBuilder: (_, i) {
+              // Loading indicator di akhir saat loadMore
+              if (i == _ctrl.notifications.length) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                );
+              }
+
               final notif = _ctrl.notifications[i];
               return _NotificationTile(
                 notif: notif,
