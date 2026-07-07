@@ -26,13 +26,9 @@ class AppPages {
 
   static final pages = [
     GetPage(name: AppRoutes.splash, page: () => const SplashScreen()),
-    GetPage(
-      name: AppRoutes.login,
-      page: () => LoginScreen(),
-      binding: BindingsBuilder(() {
-        Get.lazyPut<AuthController>(() => AuthController());
-      }),
-    ),
+    // AuthController sudah di-register permanent via AuthModule.register()
+    // di main.dart, jadi tidak perlu binding di sini.
+    GetPage(name: AppRoutes.login, page: () => LoginScreen()),
     GetPage(name: AppRoutes.register, page: () => RegisterScreen()),
     GetPage(name: AppRoutes.forgotPassword, page: () => ForgotPasswordScreen()),
     GetPage(
@@ -100,14 +96,10 @@ class AppPages {
     GetPage(name: AppRoutes.profile, page: () => const ProfileScreen()),
     GetPage(name: AppRoutes.editProfile, page: () => EditProfileScreen()),
     GetPage(name: AppRoutes.settings, page: () => const SettingScreen()),
+    // AuthController sudah permanent via AuthModule, tidak perlu binding.
     GetPage(
       name: AppRoutes.resetPassword,
       page: () => const ResetPasswordScreen(),
-      binding: BindingsBuilder(() {
-        if (!Get.isRegistered<AuthController>()) {
-          Get.lazyPut<AuthController>(() => AuthController());
-        }
-      }),
     ),
     GetPage(
       name: AppRoutes.admin,

@@ -9,7 +9,7 @@ import 'core/network/dio_client.dart';
 import 'core/services/local_notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/storage/local_storage.dart';
-import 'features/auth/presentation/auth_controller.dart';
+import 'features/auth/auth_module.dart';
 import 'routes/app_pages.dart';
 import 'routes/app_routes.dart';
 import 'core/network/supabase_service.dart';
@@ -42,7 +42,9 @@ void main() async {
 
   DioClient.instance.init();
 
-  Get.put(AuthController(), permanent: true);
+  // Register dependency injection auth feature (Clean Architecture).
+  // Setelah ini, AuthController & semua dependency-nya tersedia via Get.find().
+  AuthModule.register();
 
   runApp(const MyApp());
 }

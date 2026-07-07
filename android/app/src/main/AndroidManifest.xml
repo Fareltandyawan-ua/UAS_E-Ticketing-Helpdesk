@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Izin internet untuk akses Supabase pada build release/install APK -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <!-- Izin notifikasi untuk Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

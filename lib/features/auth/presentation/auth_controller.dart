@@ -1,22 +1,63 @@
 import 'dart:async';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'
-    show AuthException, UserAttributes;
-import '../data/auth_model.dart';
-import '../../../core/network/supabase_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
 import '../../../core/services/activity_logger.dart';
-import '../../../core/storage/secure_storage.dart';
-import '../../../core/storage/local_storage.dart';
 import '../../../routes/app_routes.dart';
+import '../data/auth_model.dart'; // re-exports User entity & UserModel
+import '../domain/auth_exceptions.dart';
+import '../domain/usecases/get_cached_user_usecase.dart';
+import '../domain/usecases/login_usecase.dart';
+import '../domain/usecases/logout_usecase.dart';
+import '../domain/usecases/refresh_profile_usecase.dart';
+import '../domain/usecases/register_usecase.dart';
+import '../domain/usecases/send_password_reset_email_usecase.dart';
+import '../domain/usecases/update_password_usecase.dart';
 
+/// AuthController — UI orchestrator untuk fitur auth.
+///
+/// Setelah refactor Clean Architecture, controller TIDAK lagi memanggil
+/// Supabase langsung. Semua operasi business lewat use cases yang
+/// di-inject via constructor.
+///
+/// Tanggung jawab controller:
+/// - State UI (loading, error, currentUser)
+/// - Form controllers
+/// - Panggil use case + handle exception → tampilkan snackbar/dialog
+/// - Navigasi setelah aksi sukses
+/// - Activity logging (cross-cutting concern di layer presentation)
 class AuthController extends GetxController {
+  // ── Dependencies (injected via DI) ────────────────────────────────
+  final LoginUseCase _loginUC;
+  final RegisterUseCase _registerUC;
+  final LogoutUseCase _logoutUC;
+  final SendPasswordResetEmailUseCase _resetEmailUC;
+  final UpdatePasswordUseCase _updatePasswordUC;
+  final RefreshProfileUseCase _refreshProfileUC;
+  final GetCachedUserUseCase _getCachedUserUC;
+
+  AuthController({
+    required LoginUseCase loginUseCase,
+    required RegisterUseCase registerUseCase,
+    required LogoutUseCase logoutUseCase,
+    required SendPasswordResetEmailUseCase sendPasswordResetEmailUseCase,
+    required UpdatePasswordUseCase updatePasswordUseCase,
+    required RefreshProfileUseCase refreshProfileUseCase,
+    required GetCachedUserUseCase getCachedUserUseCase,
+  })  : _loginUC = loginUseCase,
+        _registerUC = registerUseCase,
+        _logoutUC = logoutUseCase,
+        _resetEmailUC = sendPasswordResetEmailUseCase,
+        _updatePasswordUC = updatePasswordUseCase,
+        _refreshProfileUC = refreshProfileUseCase,
+        _getCachedUserUC = getCachedUserUseCase;
+
+  // ── State ─────────────────────────────────────────────────────────
   final Rx<UserModel?> currentUser = Rx<UserModel?>(null);
   final RxBool isLoading = false.obs;
   final RxString errorMessage = ''.obs;
 
-  // Form controllers
+  // ── Form controllers ──────────────────────────────────────────────
   final usernameController = TextEditingController();
   final passwordController = TextEditingController();
   final nameController = TextEditingController();
@@ -27,6 +68,7 @@ class AuthController extends GetxController {
   final newPasswordController = TextEditingController();
   final confirmNewPasswordController = TextEditingController();
 
+  // ── Computed ──────────────────────────────────────────────────────
   bool get isLoggedIn => currentUser.value != null;
   bool get isAdmin => currentUser.value?.isAdmin ?? false;
   bool get isHelpdesk => currentUser.value?.isHelpdesk ?? false;
@@ -52,68 +94,36 @@ class AuthController extends GetxController {
   }
 
   Future<void> _loadUserFromStorage() async {
-    final userData = await LocalStorage.getUserData();
-    if (userData != null) {
-      currentUser.value = UserModel.fromJson(jsonDecode(userData));
+    final user = await _getCachedUserUC();
+    if (user != null) {
+      currentUser.value = UserModel.fromEntity(user);
     }
   }
+
+  // ── Actions ───────────────────────────────────────────────────────
 
   Future<void> login() async {
     isLoading.value = true;
     errorMessage.value = '';
     try {
-      final response = await SupabaseService.client.auth.signInWithPassword(
+      final user = await _loginUC(
         email: emailController.text.trim(),
         password: passwordController.text,
       );
-
-      if (response.user == null) {
-        errorMessage.value = 'Login gagal. Pastikan email dan password benar.';
-        return;
-      }
-
-      final profile = await SupabaseService.client
-          .from('profiles')
-          .select()
-          .eq('id', response.user!.id)
-          .single();
-
-      final user = UserModel.fromJson({
-        ...profile,
-        'email': response.user!.email ?? '',
-      });
-
-      // Cek akun aktif — blokir login jika akun dinonaktifkan admin
-      if (!user.isActive) {
-        await SupabaseService.client.auth.signOut();
-        errorMessage.value =
-            'Akun Anda telah dinonaktifkan. Hubungi admin untuk informasi lebih lanjut.';
-        return;
-      }
-
-      currentUser.value = user;
-
-      final session = response.session;
-      if (session != null) {
-        await SecureStorage.saveToken(session.accessToken);
-        await SecureStorage.saveRefreshToken(session.refreshToken ?? '');
-      }
-      await SecureStorage.saveUserId(response.user!.id);
-      await SecureStorage.saveUserRole(currentUser.value!.role);
-
-      await LocalStorage.saveUserData(jsonEncode(currentUser.value!.toJson()));
+      currentUser.value = UserModel.fromEntity(user);
       _clearLoginForm();
 
-      // Log aktivitas login (BR-005)
       unawaited(ActivityLogger.log(
         type: ActivityType.login,
-        description: 'Login berhasil sebagai ${currentUser.value!.role}',
+        description: 'Login berhasil sebagai ${user.role}',
       ));
 
       Get.offAllNamed(AppRoutes.main);
+    } on AccountDeactivatedException catch (e) {
+      errorMessage.value = e.message;
     } on AuthException catch (e) {
       errorMessage.value = e.message;
-    } catch (e) {
+    } catch (_) {
       errorMessage.value = 'Terjadi kesalahan. Coba lagi.';
     } finally {
       isLoading.value = false;
@@ -124,56 +134,24 @@ class AuthController extends GetxController {
     isLoading.value = true;
     errorMessage.value = '';
     try {
-      final response = await SupabaseService.client.auth.signUp(
+      final user = await _registerUC(
         email: emailController.text.trim(),
         password: passwordController.text,
-        data: {
-          'name': nameController.text.trim(),
-          'username': usernameController.text.trim(),
-          'role': 'user',
-        },
+        name: nameController.text.trim(),
+        username: usernameController.text.trim(),
       );
-
-      if (response.user == null) {
-        errorMessage.value =
-            'Registrasi berhasil, silakan cek email untuk verifikasi akun.';
-        return;
-      }
-
-      // Profile dibuat oleh SQL trigger, beri jeda agar row siap diambil.
-      await Future.delayed(const Duration(seconds: 1));
-      final profile = await SupabaseService.client
-          .from('profiles')
-          .select()
-          .eq('id', response.user!.id)
-          .single();
-
-      currentUser.value = UserModel.fromJson({
-        ...profile,
-        'email': response.user!.email ?? '',
-      });
-
-      final session = response.session;
-      if (session != null) {
-        await SecureStorage.saveToken(session.accessToken);
-        await SecureStorage.saveRefreshToken(session.refreshToken ?? '');
-      }
-      await SecureStorage.saveUserId(response.user!.id);
-      await SecureStorage.saveUserRole(currentUser.value!.role);
-
-      await LocalStorage.saveUserData(jsonEncode(currentUser.value!.toJson()));
+      currentUser.value = UserModel.fromEntity(user);
       _clearRegisterForm();
 
-      // Log aktivitas registrasi (BR-005)
       unawaited(ActivityLogger.log(
         type: ActivityType.register,
-        description: 'Akun baru dibuat: ${currentUser.value!.email}',
+        description: 'Akun baru dibuat: ${user.email}',
       ));
 
       Get.offAllNamed(AppRoutes.main);
     } on AuthException catch (e) {
       errorMessage.value = e.message;
-    } catch (e) {
+    } catch (_) {
       errorMessage.value = 'Terjadi kesalahan. Coba lagi.';
     } finally {
       isLoading.value = false;
@@ -184,15 +162,13 @@ class AuthController extends GetxController {
     isLoading.value = true;
     errorMessage.value = '';
     try {
-      // Log dulu sebelum signOut (BR-005) supaya masih authenticated saat insert
+      // Log sebelum signOut supaya masih authenticated
       await ActivityLogger.log(
         type: ActivityType.logout,
         description: 'Logout dari aplikasi',
       );
 
-      await SupabaseService.client.auth.signOut();
-      await SecureStorage.clearAll();
-      await LocalStorage.clearUserData();
+      await _logoutUC();
       currentUser.value = null;
       Get.offAllNamed(AppRoutes.login);
     } on AuthException catch (e) {
@@ -208,9 +184,7 @@ class AuthController extends GetxController {
     isLoading.value = true;
     errorMessage.value = '';
     try {
-      await SupabaseService.client.auth.resetPasswordForEmail(
-        resetEmailController.text.trim(),
-      );
+      await _resetEmailUC(resetEmailController.text.trim());
       Get.back();
       Get.snackbar(
         'Berhasil',
@@ -228,14 +202,6 @@ class AuthController extends GetxController {
     }
   }
 
-  /// Ubah password user yang sedang aktif.
-  ///
-  /// Mode penggunaan:
-  /// - **Ganti password** (`isRecovery=false`): wajib isi [currentPassword],
-  ///   akan diverifikasi via re-login. Dipanggil dari Settings.
-  /// - **Recovery** (`isRecovery=true`): tidak perlu [currentPassword].
-  ///   Session sudah diset via deep link dari email. Setelah sukses, user
-  ///   di-logout & diarahkan ke login.
   Future<void> updatePassword({
     String? currentPassword,
     required String newPassword,
@@ -244,42 +210,16 @@ class AuthController extends GetxController {
     isLoading.value = true;
     errorMessage.value = '';
     try {
-      // Untuk mode ganti password biasa, verifikasi password lama dulu
-      if (!isRecovery) {
-        if (currentPassword == null || currentPassword.isEmpty) {
-          errorMessage.value = 'Password saat ini wajib diisi';
-          return;
-        }
-        final email =
-            SupabaseService.client.auth.currentUser?.email ?? '';
-        if (email.isEmpty) {
-          errorMessage.value = 'Sesi tidak valid. Silakan login ulang.';
-          return;
-        }
-        try {
-          await SupabaseService.client.auth.signInWithPassword(
-            email: email,
-            password: currentPassword,
-          );
-        } on AuthException catch (_) {
-          errorMessage.value = 'Password saat ini salah';
-          return;
-        }
-        if (currentPassword == newPassword) {
-          errorMessage.value =
-              'Password baru harus berbeda dengan password saat ini';
-          return;
-        }
-      }
-
-      await SupabaseService.client.auth.updateUser(
-        UserAttributes(password: newPassword),
+      await _updatePasswordUC(
+        currentPassword: currentPassword,
+        newPassword: newPassword,
+        isRecovery: isRecovery,
       );
+
       currentPasswordController.clear();
       newPasswordController.clear();
       confirmNewPasswordController.clear();
 
-      // Log aktivitas ganti password (BR-005) — sebelum potensi logout di recovery
       await ActivityLogger.log(
         type: ActivityType.passwordChanged,
         description: isRecovery
@@ -287,7 +227,6 @@ class AuthController extends GetxController {
             : 'Password diubah dari menu Pengaturan',
       );
 
-      // Tampilkan dialog sukses — wajib di-tap OK biar user yakin berhasil
       await Get.dialog(
         AlertDialog(
           shape:
@@ -320,15 +259,18 @@ class AuthController extends GetxController {
       );
 
       if (isRecovery) {
-        // Setelah recovery, paksa logout & login ulang dengan password baru
-        await SupabaseService.client.auth.signOut();
-        await SecureStorage.clearAll();
-        await LocalStorage.clearUserData();
+        await _logoutUC();
         currentUser.value = null;
         Get.offAllNamed(AppRoutes.login);
       } else {
         Get.back();
       }
+    } on WrongCurrentPasswordException catch (e) {
+      errorMessage.value = e.message;
+    } on SamePasswordException catch (e) {
+      errorMessage.value = e.message;
+    } on InvalidSessionException catch (e) {
+      errorMessage.value = e.message;
     } on AuthException catch (e) {
       errorMessage.value = e.message;
     } catch (_) {
@@ -339,23 +281,8 @@ class AuthController extends GetxController {
   }
 
   Future<void> refreshProfile() async {
-    try {
-      final authUser = SupabaseService.client.auth.currentUser;
-      if (authUser == null) return;
-
-      final profile = await SupabaseService.client
-          .from('profiles')
-          .select()
-          .eq('id', authUser.id)
-          .single();
-
-      final user = UserModel.fromJson({
-        ...profile,
-        'email': authUser.email ?? '',
-      });
-      currentUser.value = user;
-      await LocalStorage.saveUserData(jsonEncode(user.toJson()));
-    } catch (_) {}
+    final user = await _refreshProfileUC();
+    if (user != null) currentUser.value = UserModel.fromEntity(user);
   }
 
   void _clearLoginForm() {
